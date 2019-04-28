@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+
+<body>
+</body>
+
+<script src="../dist/index.js"></script>
+<script>
+const canvas = document.createElement( 'canvas' );
+const gl = canvas.getContext( 'webgl' );
+const waveNerdEngine = new WaveNerdEngine( gl );
+
+const frag = `#ifdef GL_ES
+precision highp float;
+#endif
+
+void main() {
+  gl_FragColor = vec4( 0.0, 0.0, 0.0, 1.0 );
+}
+`;
+
+const result = waveNerdEngine.compile( frag );
+console.log( result );
+</script>

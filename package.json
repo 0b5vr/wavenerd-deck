@@ -1,0 +1,32 @@
+{
+  "name": "wavenerd-engine",
+  "description": "a",
+  "version": "0.0.1",
+  "main": "index.js",
+  "author": {
+    "name": "FMS-Cat",
+    "contact": "https://github.com/FMS-Cat"
+  },
+  "license": "MIT",
+  "private": false,
+  "scripts": {
+    "build": "yarn build-dev && yarn build-prod && yarn build-types",
+    "build-dev": "webpack --mode development",
+    "build-prod": "webpack --mode production",
+    "build-types": "tsc --emitDeclarationOnly"
+  },
+  "devDependencies": {
+    "@fms-cat/glcat-ts": "^0.2.1",
+    "@types/webpack": "^4.4.28",
+    "@types/webpack-dev-server": "^3.1.5",
+    "@typescript-eslint/eslint-plugin": "^1.7.0",
+    "@typescript-eslint/parser": "^1.7.0",
+    "eslint": "^5.16.0",
+    "ts-loader": "^5.4.4",
+    "ts-node": "^8.1.0",
+    "typescript": "^3.4.5",
+    "webpack": "^4.30.0",
+    "webpack-cli": "^3.3.1",
+    "webpack-dev-server": "^3.3.1"
+  }
+}
