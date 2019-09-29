@@ -4,20 +4,22 @@
 </body>
 
 <script src="../dist/index.js"></script>
+<script src="https://unpkg.com/@fms-cat/glcat-ts@0.6/dist/glcat.js"></script>
 <script>
-const canvas = document.createElement( 'canvas' );
-const gl = canvas.getContext( 'webgl' );
-const waveNerdEngine = new WaveNerdEngine( gl );
+( async() => {
+  const canvas = document.createElement( 'canvas' );
+  const gl = canvas.getContext( 'webgl' );
+  const glCat = new GLCat( gl );
 
-const frag = `#ifdef GL_ES
-precision highp float;
-#endif
+  const audio = new AudioContext();
+  console.log( audio );
 
-void main() {
-  gl_FragColor = vec4( 0.0, 0.0, 0.0, 1.0 );
-}
-`;
+  const waveNerdEngine = new WaveNerdEngine( glCat, audio );
+  waveNerdEngine.node.connect( audio.destination );
 
-const result = waveNerdEngine.compile( frag );
-console.log( result );
+  const frag = await fetch( './sine.frag' )
+    .then( ( res ) => res.text() );
+
+  const result = waveNerdEngine.compile( frag );
+} )();
 </script>
