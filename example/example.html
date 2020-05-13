@@ -1,10 +1,13 @@
 <!DOCTYPE html>
 
 <body>
+  <textarea cols="100" rows="40" id="textarea">
+  </textarea><br />
+  <button id="buttonCompile">Compile</button>
 </body>
 
-<script src="../dist/index.js"></script>
-<script src="https://unpkg.com/@fms-cat/glcat-ts@0.6/dist/glcat.js"></script>
+<script src="../dist/wavenerd-deck.js"></script>
+<script src="https://unpkg.com/@fms-cat/glcat-ts@0.10.0/dist/glcat.js"></script>
 <script>
 ( async() => {
   const canvas = document.createElement( 'canvas' );
@@ -12,14 +15,38 @@
   const glCat = new GLCat( gl );
 
   const audio = new AudioContext();
-  console.log( audio );
 
-  const waveNerdEngine = new WaveNerdEngine( glCat, audio );
-  waveNerdEngine.node.connect( audio.destination );
+  console.log( WAVENERD_DECK );
+  const waveNerdDeck = new WAVENERD_DECK.WaveNerdDeck( glCat, audio );
+  waveNerdDeck.node.connect( audio.destination );
+  waveNerdDeck.bpm = 200;
+
+  await fetch( './samples/amen.wav' )
+  .then( ( res ) => res.arrayBuffer() )
+  .then( ( buffer ) => waveNerdDeck.loadSample( 'sampleAmen', buffer ) );
+
+  await fetch( './samples/909kick.wav' )
+  .then( ( res ) => res.arrayBuffer() )
+  .then( ( buffer ) => waveNerdDeck.loadSample( 'sample909kick', buffer ) );
+
+  await fetch( './samples/breakthrough.wav' )
+  .then( ( res ) => res.arrayBuffer() )
+  .then( ( buffer ) => waveNerdDeck.loadSample( 'sampleBreakthrough', buffer ) );
+
+  await fetch( './samples/noise.wav' )
+  .then( ( res ) => res.arrayBuffer() )
+  .then( ( buffer ) => waveNerdDeck.loadSample( 'sampleNoise', buffer ) );
 
   const frag = await fetch( './sine.frag' )
     .then( ( res ) => res.text() );
 
-  const result = waveNerdEngine.compile( frag );
+  textarea.value = frag;
+
+  waveNerdDeck.compile( frag );
+
+  // == button listener ============================================================================
+  buttonCompile.addEventListener( 'click', () => {
+    waveNerdDeck.compile( textarea.value );
+  } );
 } )();
 </script>
