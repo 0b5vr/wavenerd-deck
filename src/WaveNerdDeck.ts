@@ -17,7 +17,7 @@ void main() {
 `;
 
 export class WaveNerdDeck {
-  private __bufferSize: number = 2048;
+  private __bufferSize = 2048;
   private __beatManager: BeatManager;
   private __audio: AudioContext;
   private __node: ScriptProcessorNode;
@@ -27,8 +27,9 @@ export class WaveNerdDeck {
   private __framebuffer: GLCatFramebuffer;
   private __program: WaveNerdProgram | null = null;
   private __programCue: WaveNerdProgram | null = null;
-  private __time: number = 0;
-  private __dateLastUpdated: number = Date.now();
+  private __settingCue = false;
+  private __time = 0;
+  private __dateLastUpdated = Date.now();
   private __pixelBuffer: Float32Array;
   private __lastError: any;
   private __samples: Array<{
@@ -140,6 +141,7 @@ export class WaveNerdDeck {
     ).catch( ( e ) => {
       this.__lastError = e;
       this.__programCue = null;
+      this.__emit( 'error', { error: e } );
       throw e;
     } );
 
@@ -155,7 +157,18 @@ export class WaveNerdDeck {
       code,
       requiredSamples
     };
+    this.__emit( 'readyCue' );
     this.__lastError = null;
+  }
+
+  /**
+   * Apply the cue shader after the bar ends.
+   */
+  public setCue(): void {
+    if ( this.__programCue ) {
+      this.__settingCue = true;
+      this.__emit( 'setCue' );
+    }
   }
 
   /**
@@ -218,21 +231,26 @@ export class WaveNerdDeck {
     outR.set( this.__pixelBuffer.slice( bufferSize, 2.0 * bufferSize ) );
 
     // process the next program??
-    if ( this.__programCue && beginNext < bufferSize ) {
-      const prevProgram = this.__program;
-      this.__program = this.__programCue;
+    if ( this.__settingCue && beginNext < bufferSize ) {
+      this.__settingCue = false;
+      this.__emit( 'goCue' );
 
-      if ( prevProgram ) {
-        prevProgram.program.dispose( true );
+      if ( this.__programCue ) {
+        const prevProgram = this.__program;
+        this.__program = this.__programCue;
+
+        if ( prevProgram ) {
+          prevProgram.program.dispose( true );
+        }
+        this.__programCue = null;
+
+        // render
+        this.__render();
+
+        // insert into its audio buffer
+        outL.set( this.__pixelBuffer.slice( beginNext, bufferSize ), beginNext );
+        outR.set( this.__pixelBuffer.slice( bufferSize + beginNext, 2.0 * bufferSize ), beginNext );
       }
-      this.__programCue = null;
-
-      // render
-      this.__render();
-
-      // insert into its audio buffer
-      outL.set( this.__pixelBuffer.slice( beginNext, bufferSize ), beginNext );
-      outR.set( this.__pixelBuffer.slice( bufferSize + beginNext, 2.0 * bufferSize ), beginNext );
     }
   }
 
@@ -301,6 +319,9 @@ export class WaveNerdDeck {
 }
 
 export interface WaveNerdDeck extends EventEmittable<{
+  readyCue: void;
+  setCue: void;
+  goCue: void;
   error: { error: any };
 }> {}
 applyMixins( WaveNerdDeck, [ EventEmittable ] );
