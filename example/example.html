@@ -3,7 +3,10 @@
 <body>
   <textarea cols="100" rows="40" id="textarea">
   </textarea><br />
+  BPM: <input id="inputBpm" type="number" value="190" /><br />
   <button id="buttonCompile">Compile</button>
+  <button id="buttonApplyCue" disabled>Apply Cue</button><br />
+  <span id="spanStatus">Awaiting cue</span>
 </body>
 
 <script src="../dist/wavenerd-deck.js"></script>
@@ -19,23 +22,23 @@
   console.log( WAVENERD_DECK );
   const waveNerdDeck = new WAVENERD_DECK.WaveNerdDeck( { glCat, audio } );
   waveNerdDeck.node.connect( audio.destination );
-  waveNerdDeck.bpm = 200;
+  waveNerdDeck.bpm = 190;
 
-  await fetch( './samples/amen.wav' )
+  await fetch( './samples/amen.ogg' )
   .then( ( res ) => res.arrayBuffer() )
   .then( ( buffer ) => waveNerdDeck.loadSample( 'sampleAmen', buffer ) );
-
-  await fetch( './samples/909kick.wav' )
-  .then( ( res ) => res.arrayBuffer() )
-  .then( ( buffer ) => waveNerdDeck.loadSample( 'sample909kick', buffer ) );
-
-  await fetch( './samples/breakthrough.wav' )
-  .then( ( res ) => res.arrayBuffer() )
-  .then( ( buffer ) => waveNerdDeck.loadSample( 'sampleBreakthrough', buffer ) );
 
   await fetch( './samples/noise.wav' )
   .then( ( res ) => res.arrayBuffer() )
   .then( ( buffer ) => waveNerdDeck.loadSample( 'sampleNoise', buffer ) );
+
+  await fetch( './samples/crash.ogg' )
+  .then( ( res ) => res.arrayBuffer() )
+  .then( ( buffer ) => waveNerdDeck.loadSample( 'sampleCrash', buffer ) );
+
+  await fetch( './samples/909oh.ogg' )
+  .then( ( res ) => res.arrayBuffer() )
+  .then( ( buffer ) => waveNerdDeck.loadSample( 'sample909OH', buffer ) );
 
   const frag = await fetch( './sine.frag' )
     .then( ( res ) => res.text() );
@@ -44,9 +47,28 @@
 
   waveNerdDeck.compile( frag );
 
-  // == button listener ============================================================================
+  // == wavenerd deck event listeners ==============================================================
+  waveNerdDeck.on( 'changeCueStatus', ( { cueStatus } ) => {
+    buttonApplyCue.disabled = cueStatus !== 'ready';
+
+    spanStatus.innerText = (
+      cueStatus === 'none' ? 'Awaiting cue' :
+      cueStatus === 'ready' ? 'Ready' :
+      'Applying...'
+    )
+  } );
+
+  // == ui listeners ===============================================================================
+  inputBpm.addEventListener( 'change', () => {
+    waveNerdDeck.bpm = inputBpm.value;
+  } );
+
   buttonCompile.addEventListener( 'click', () => {
     waveNerdDeck.compile( textarea.value );
+  } );
+
+  buttonApplyCue.addEventListener( 'click', () => {
+    waveNerdDeck.applyCue();
   } );
 } )();
 </script>

@@ -17,27 +17,24 @@ void main() {
 `;
 
 export class WaveNerdDeck {
+  /**
+   * Its current cue status.
+   * `'none'`: There is nothing in its current cue.
+   * `'ready'`: There is a cue shader and is ready to be applied.
+   * `'applying'`: There is a cue shader and is going to be applied in the next bar.
+   */
+  private __cueStatus: 'none' | 'ready' | 'applying' = 'none';
+  public get cueStatus(): 'none' | 'ready' | 'applying' {
+    return this.__cueStatus;
+  }
+
+  /**
+   * Its buffer size.
+   */
   private __bufferSize: number;
-  private __beatManager: BeatManager;
-  private __audio: AudioContext;
-  private __node: ScriptProcessorNode;
-  private __glCat: GLCat;
-  private __bufferQuad: GLCatBuffer;
-  private __framebufferTexture: GLCatTexture;
-  private __framebuffer: GLCatFramebuffer;
-  private __program: WaveNerdProgram | null = null;
-  private __programCue: WaveNerdProgram | null = null;
-  private __settingCue = false;
-  private __time = 0;
-  private __dateLastUpdated = Date.now();
-  private __pixelBuffer: Float32Array;
-  private __lastError: any;
-  private __samples: Array<{
-    name: string,
-    texture: GLCatTexture,
-    sampleRate: number,
-    duration: number
-  }> = [];
+  public get bufferSize(): number {
+    return this.__bufferSize;
+  }
 
   /**
    * Its current bpm.
@@ -52,6 +49,7 @@ export class WaveNerdDeck {
   /**
    * Its current time.
    */
+  private __time = 0;
   public get time(): number {
     let time = this.__time;
     time += ( Date.now() - this.__dateLastUpdated ) / 1000.0;
@@ -59,8 +57,9 @@ export class WaveNerdDeck {
   }
 
   /**
-   * Its binded `GLCat`.
+   * Its bound `GLCat`.
    */
+  private __glCat: GLCat;
   public get glCat(): GLCat {
     return this.__glCat;
   }
@@ -68,20 +67,15 @@ export class WaveNerdDeck {
   /**
    * Its last compile error happened in [[WaveNerdDeck.compile]].
    */
+  private __lastError: any;
   public get lastError(): any {
     return this.__lastError;
   }
 
   /**
-   * Its buffer size.
-   */
-  public get bufferSize(): number {
-    return this.__bufferSize;
-  }
-
-  /**
    * Its binded `AudioContext`.
    */
+  private __audio: AudioContext;
   public get audio(): AudioContext {
     return this.__audio;
   }
@@ -89,6 +83,7 @@ export class WaveNerdDeck {
   /**
    * Its node of the AudioContext.
    */
+  private __node: ScriptProcessorNode;
   public get node(): ScriptProcessorNode {
     return this.__node;
   }
@@ -99,6 +94,21 @@ export class WaveNerdDeck {
   public get sampleRate(): number {
     return this.__audio.sampleRate;
   }
+
+  private __beatManager: BeatManager;
+  private __bufferQuad: GLCatBuffer;
+  private __framebufferTexture: GLCatTexture;
+  private __framebuffer: GLCatFramebuffer;
+  private __program: WaveNerdProgram | null = null;
+  private __programCue: WaveNerdProgram | null = null;
+  private __dateLastUpdated = Date.now();
+  private __pixelBuffer: Float32Array;
+  private __samples: Array<{
+    name: string,
+    texture: GLCatTexture,
+    sampleRate: number,
+    duration: number
+  }> = [];
 
   /**
    * Constructor of the WaveNerdDeck.
@@ -116,7 +126,7 @@ export class WaveNerdDeck {
     this.__bufferQuad = this.__glCat.createBuffer()!;
     this.__bufferQuad.setVertexbuffer( new Float32Array( [ -1, -1, 1, -1, -1, 1, 1, 1 ] ) );
     this.__framebufferTexture = this.__glCat.createTexture()!;
-    this.__framebufferTexture.setTextureFromFloatArray( this.__bufferSize / 4, 2, null, GL.RGBA );
+    this.__framebufferTexture.setTextureFromFloatArray( this.__bufferSize / 2, 1, null, GL.RGBA );
     this.__framebuffer = this.__glCat.createFramebuffer()!;
     this.__framebuffer.attachTexture( this.__framebufferTexture );
     this.__pixelBuffer = new Float32Array( this.__bufferSize * 2 );
@@ -129,6 +139,7 @@ export class WaveNerdDeck {
    * Dispose this WaveNerdDeck.
    */
   public dispose(): void {
+    this.__setCueStatus( 'none' );
     this.__bufferQuad.dispose();
     if ( this.__program ) {
       this.__program.program.dispose( true );
@@ -148,6 +159,7 @@ export class WaveNerdDeck {
     ).catch( ( e ) => {
       this.__lastError = e;
       this.__programCue = null;
+      this.__setCueStatus( 'none' );
       this.__emit( 'error', { error: e } );
       throw e;
     } );
@@ -164,17 +176,16 @@ export class WaveNerdDeck {
       code,
       requiredSamples
     };
-    this.__emit( 'readyCue' );
+    this.__setCueStatus( 'ready' );
     this.__lastError = null;
   }
 
   /**
    * Apply the cue shader after the bar ends.
    */
-  public setCue(): void {
-    if ( this.__programCue ) {
-      this.__settingCue = true;
-      this.__emit( 'setCue' );
+  public applyCue(): void {
+    if ( this.__cueStatus === 'ready' ) {
+      this.__setCueStatus( 'applying' );
     }
   }
 
@@ -187,15 +198,21 @@ export class WaveNerdDeck {
       const frames = audioBuffer.length;
       const width = 2048;
       const lengthCeiled = Math.ceil( frames / 2048.0 );
-      const height = lengthCeiled * 2;
+      const height = lengthCeiled;
 
-      const buffer = new Float32Array( width * height );
+      const buffer = new Float32Array( width * height * 4 );
       const channels = audioBuffer.numberOfChannels;
-      buffer.set( audioBuffer.getChannelData( 0 ), 0 );
-      buffer.set( audioBuffer.getChannelData( channels === 1 ? 0 : 1 ), width * lengthCeiled );
+
+      const dataL = audioBuffer.getChannelData( 0 );
+      const dataR = audioBuffer.getChannelData( channels === 1 ? 0 : 1 );
+
+      for ( let i = 0; i < frames; i ++ ) {
+        buffer[ i * 4 + 0 ] = dataL[ i ];
+        buffer[ i * 4 + 1 ] = dataR[ i ];
+      }
 
       const texture = this.__glCat.createTexture()!;
-      texture.setTextureFromFloatArray( width, height, buffer, GL.LUMINANCE );
+      texture.setTextureFromFloatArray( width, height, buffer, GL.RGBA );
       texture.textureFilter( GL.NEAREST );
 
       this.__samples.push( {
@@ -234,13 +251,14 @@ export class WaveNerdDeck {
     const beginNext = Math.min( bufferSize, Math.floor( ( 1.0 - bar ) * sampleRate ) );
 
     // insert into its audio buffer
-    outL.set( this.__pixelBuffer.slice( 0, bufferSize ) );
-    outR.set( this.__pixelBuffer.slice( bufferSize, 2.0 * bufferSize ) );
+    for ( let i = 0; i < bufferSize; i ++ ) {
+      outL[ i ] = this.__pixelBuffer[ i * 2 + 0 ];
+      outR[ i ] = this.__pixelBuffer[ i * 2 + 1 ];
+    }
 
     // process the next program??
-    if ( this.__settingCue && beginNext < bufferSize ) {
-      this.__settingCue = false;
-      this.__emit( 'goCue' );
+    if ( this.__cueStatus === 'applying' && beginNext < bufferSize ) {
+      this.__setCueStatus( 'none' );
 
       if ( this.__programCue ) {
         const prevProgram = this.__program;
@@ -255,8 +273,10 @@ export class WaveNerdDeck {
         this.__render();
 
         // insert into its audio buffer
-        outL.set( this.__pixelBuffer.slice( beginNext, bufferSize ), beginNext );
-        outR.set( this.__pixelBuffer.slice( bufferSize + beginNext, 2.0 * bufferSize ), beginNext );
+        for ( let i = beginNext; i < bufferSize; i ++ ) {
+          outL[ i ] = this.__pixelBuffer[ i * 2 + 0 ];
+          outR[ i ] = this.__pixelBuffer[ i * 2 + 1 ];
+        }
       }
     }
   }
@@ -286,7 +306,7 @@ export class WaveNerdDeck {
       } );
 
       this.__glCat.useProgram( this.__program.program );
-      gl.viewport( 0, 0, this.__bufferSize / 4, 2 );
+      gl.viewport( 0, 0, this.__bufferSize / 2, 1 );
       gl.bindFramebuffer( gl.FRAMEBUFFER, this.__framebuffer.raw );
       gl.blendFunc( GL.ONE, GL.ZERO );
       gl.clear( GL.DEPTH_BUFFER_BIT | GL.COLOR_BUFFER_BIT );
@@ -316,19 +336,22 @@ export class WaveNerdDeck {
     gl.readPixels(
       0, // x
       0, // y
-      this.bufferSize / 4, // width
-      2, // height
+      this.bufferSize / 2, // width
+      1, // height
       GL.RGBA, // format
       GL.FLOAT, // type
       this.__pixelBuffer // dst
     );
   }
+
+  private __setCueStatus( cueStatus: 'none' | 'ready' | 'applying' ): void {
+    this.__cueStatus = cueStatus;
+    this.__emit( 'changeCueStatus', { cueStatus } );
+  }
 }
 
 export interface WaveNerdDeck extends EventEmittable<{
-  readyCue: void;
-  setCue: void;
-  goCue: void;
+  changeCueStatus: { cueStatus: 'none' | 'ready' | 'applying' };
   error: { error: any };
 }> {}
 applyMixins( WaveNerdDeck, [ EventEmittable ] );

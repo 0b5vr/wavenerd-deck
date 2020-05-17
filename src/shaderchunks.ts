@@ -8,38 +8,38 @@ uniform float sampleRate;
 uniform float _deltaSample;
 uniform vec4 _timeHead;
 
-float sampleNearest( sampler2D s, vec4 meta, float ch, float time ) {
+vec2 sampleNearest( sampler2D s, vec4 meta, float time ) {
+  if ( meta.w < time ) { return vec2( 0.0 ); }
   float x = time / meta.x * meta.z;
-  vec2 uv = vec2(
-    mod( x, 1.0 ),
-    floor( x ) / meta.y + ch * 0.5
-  ) + 0.5 / meta.xy;
-  return texture2D( s, uv ).x;
+  vec2 uv = fract( vec2(
+    x,
+    floor( x ) / meta.y
+  ) ) + 0.5 / meta.xy;
+  return texture2D( s, uv ).xy;
 }
 
-float sample( sampler2D s, vec4 meta, float ch, float time ) {
-  float sum = 0.0;
-  float def = 0.5 - mod( time * meta.z, 1.0 );
+// I have 0% confidence that the algorithm is perfect
+vec2 sample( sampler2D s, vec4 meta, float time ) {
+  if ( meta.w < time ) { return vec2( 0.0 ); }
+  vec2 sum = vec2( 0.0 );
+  float def = 0.5 - fract( time * meta.z );
   for ( int i = -5; i <= 5; i ++ ) {
     float x = floor( time * meta.z + float( i ) ) / meta.x;
     float deft = def + float( i );
-    vec2 uv = vec2(
-      mod( x, 1.0 ),
-      floor( x ) / meta.y + ch * 0.5
-    ) + vec2( 0.0, 0.5 ) / meta.xy;
-    sum += texture2D( s, uv ).x * min( sin( deft * _PI ) / deft / _PI, 1.0 );
+    vec2 uv = fract( vec2(
+      x,
+      floor( x ) / meta.y
+    ) ) + 0.5 / meta.xy;
+    sum += texture2D( s, uv ).xy * min( sin( deft * _PI ) / deft / _PI, 1.0 );
   }
   return sum;
 }
 `;
 
 export const shaderchunkPost = `void main() {
-  float ch = floor( gl_FragCoord.y );
-  float off = floor( gl_FragCoord.x ) * 4.0;
+  float off = floor( gl_FragCoord.x ) * 2.0;
   gl_FragColor = vec4(
-    mainAudio( ch, mod( _timeHead + ( off ) * _deltaSample, timeLength ) ),
-    mainAudio( ch, mod( _timeHead + ( off + 1.0 ) * _deltaSample, timeLength ) ),
-    mainAudio( ch, mod( _timeHead + ( off + 2.0 ) * _deltaSample, timeLength ) ),
-    mainAudio( ch, mod( _timeHead + ( off + 3.0 ) * _deltaSample, timeLength ) )
+    mainAudio( mod( _timeHead + ( off ) * _deltaSample, timeLength ) ),
+    mainAudio( mod( _timeHead + ( off + 1.0 ) * _deltaSample, timeLength ) )
   );
 }`;
