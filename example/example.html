@@ -20,35 +20,35 @@
   const audio = new AudioContext();
 
   console.log( WAVENERD_DECK );
-  const waveNerdDeck = new WAVENERD_DECK.WaveNerdDeck( { glCat, audio } );
-  waveNerdDeck.node.connect( audio.destination );
-  waveNerdDeck.bpm = 190;
+  const wavenerdDeck = new WAVENERD_DECK.WavenerdDeck( { glCat, audio } );
+  wavenerdDeck.node.connect( audio.destination );
+  wavenerdDeck.bpm = 190;
 
   await fetch( './samples/amen.ogg' )
   .then( ( res ) => res.arrayBuffer() )
-  .then( ( buffer ) => waveNerdDeck.loadSample( 'sampleAmen', buffer ) );
+  .then( ( buffer ) => wavenerdDeck.loadSample( 'sampleAmen', buffer ) );
 
   await fetch( './samples/noise.wav' )
   .then( ( res ) => res.arrayBuffer() )
-  .then( ( buffer ) => waveNerdDeck.loadSample( 'sampleNoise', buffer ) );
+  .then( ( buffer ) => wavenerdDeck.loadSample( 'sampleNoise', buffer ) );
 
   await fetch( './samples/crash.ogg' )
   .then( ( res ) => res.arrayBuffer() )
-  .then( ( buffer ) => waveNerdDeck.loadSample( 'sampleCrash', buffer ) );
+  .then( ( buffer ) => wavenerdDeck.loadSample( 'sampleCrash', buffer ) );
 
   await fetch( './samples/909oh.ogg' )
   .then( ( res ) => res.arrayBuffer() )
-  .then( ( buffer ) => waveNerdDeck.loadSample( 'sample909OH', buffer ) );
+  .then( ( buffer ) => wavenerdDeck.loadSample( 'sample909OH', buffer ) );
 
   const frag = await fetch( './sine.frag' )
     .then( ( res ) => res.text() );
 
   textarea.value = frag;
 
-  waveNerdDeck.compile( frag );
+  wavenerdDeck.compile( frag );
 
   // == wavenerd deck event listeners ==============================================================
-  waveNerdDeck.on( 'changeCueStatus', ( { cueStatus } ) => {
+  wavenerdDeck.on( 'changeCueStatus', ( { cueStatus } ) => {
     buttonApplyCue.disabled = cueStatus !== 'ready';
 
     spanStatus.innerText = (
@@ -60,15 +60,15 @@
 
   // == ui listeners ===============================================================================
   inputBpm.addEventListener( 'change', () => {
-    waveNerdDeck.bpm = inputBpm.value;
+    wavenerdDeck.bpm = inputBpm.value;
   } );
 
   buttonCompile.addEventListener( 'click', () => {
-    waveNerdDeck.compile( textarea.value );
+    wavenerdDeck.compile( textarea.value );
   } );
 
   buttonApplyCue.addEventListener( 'click', () => {
-    waveNerdDeck.applyCue();
+    wavenerdDeck.applyCue();
   } );
 } )();
 </script>

@@ -4,7 +4,7 @@ import { BeatManager } from './BeatManager';
 import { EventEmittable } from './utils/EventEmittable';
 import { applyMixins } from './utils/applyMixins';
 
-export interface WaveNerdProgram {
+interface WavenerdProgram {
   program: GLCatProgram;
   code: string;
   requiredSamples: { [ name: string ]: true };
@@ -16,7 +16,7 @@ void main() {
 }
 `;
 
-export class WaveNerdDeck {
+export class WavenerdDeck {
   /**
    * Its current cue status.
    * `'none'`: There is nothing in its current cue.
@@ -65,7 +65,7 @@ export class WaveNerdDeck {
   }
 
   /**
-   * Its last compile error happened in [[WaveNerdDeck.compile]].
+   * Its last compile error happened in [[WavenerdDeck.compile]].
    */
   private __lastError: any;
   public get lastError(): any {
@@ -99,8 +99,8 @@ export class WaveNerdDeck {
   private __bufferQuad: GLCatBuffer;
   private __framebufferTexture: GLCatTexture;
   private __framebuffer: GLCatFramebuffer;
-  private __program: WaveNerdProgram | null = null;
-  private __programCue: WaveNerdProgram | null = null;
+  private __program: WavenerdProgram | null = null;
+  private __programCue: WavenerdProgram | null = null;
   private __dateLastUpdated = Date.now();
   private __pixelBuffer: Float32Array;
   private __samples: Array<{
@@ -111,7 +111,7 @@ export class WaveNerdDeck {
   }> = [];
 
   /**
-   * Constructor of the WaveNerdDeck.
+   * Constructor of the WavenerdDeck.
    */
   public constructor( { glCat, audio, bufferSize, bpm }: {
     glCat: GLCat;
@@ -136,7 +136,7 @@ export class WaveNerdDeck {
   }
 
   /**
-   * Dispose this WaveNerdDeck.
+   * Dispose this WavenerdDeck.
    */
   public dispose(): void {
     this.__setCueStatus( 'none' );
@@ -350,8 +350,8 @@ export class WaveNerdDeck {
   }
 }
 
-export interface WaveNerdDeck extends EventEmittable<{
+export interface WavenerdDeck extends EventEmittable<{
   changeCueStatus: { cueStatus: 'none' | 'ready' | 'applying' };
   error: { error: any };
 }> {}
-applyMixins( WaveNerdDeck, [ EventEmittable ] );
+applyMixins( WavenerdDeck, [ EventEmittable ] );

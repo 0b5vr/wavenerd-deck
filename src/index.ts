@@ -1,4 +1,4 @@
-export { WaveNerdDeck } from './WaveNerdDeck';
+export { WavenerdDeck } from './WavenerdDeck';
 
-import { WaveNerdDeck } from './WaveNerdDeck';
-export default WaveNerdDeck;
+import { WavenerdDeck } from './WavenerdDeck';
+export default WavenerdDeck;
