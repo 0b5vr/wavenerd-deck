@@ -17,7 +17,7 @@ void main() {
 `;
 
 export class WaveNerdDeck {
-  private __bufferSize = 2048;
+  private __bufferSize: number;
   private __beatManager: BeatManager;
   private __audio: AudioContext;
   private __node: ScriptProcessorNode;
@@ -103,9 +103,16 @@ export class WaveNerdDeck {
   /**
    * Constructor of the WaveNerdDeck.
    */
-  public constructor( glCat: GLCat, audio: AudioContext ) {
+  public constructor( { glCat, audio, bufferSize, bpm }: {
+    glCat: GLCat;
+    audio: AudioContext;
+    bufferSize?: number;
+    bpm?: number;
+  } ) {
+    this.__bufferSize = bufferSize ?? 2048;
     this.__glCat = glCat;
     this.__beatManager = new BeatManager();
+    this.__beatManager.bpm = bpm ?? 140;
     this.__bufferQuad = this.__glCat.createBuffer()!;
     this.__bufferQuad.setVertexbuffer( new Float32Array( [ -1, -1, 1, -1, -1, 1, 1, 1 ] ) );
     this.__framebufferTexture = this.__glCat.createTexture()!;

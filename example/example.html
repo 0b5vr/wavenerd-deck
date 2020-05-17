@@ -17,7 +17,7 @@
   const audio = new AudioContext();
 
   console.log( WAVENERD_DECK );
-  const waveNerdDeck = new WAVENERD_DECK.WaveNerdDeck( glCat, audio );
+  const waveNerdDeck = new WAVENERD_DECK.WaveNerdDeck( { glCat, audio } );
   waveNerdDeck.node.connect( audio.destination );
   waveNerdDeck.bpm = 200;
 
