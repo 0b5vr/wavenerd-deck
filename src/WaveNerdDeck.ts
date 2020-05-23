@@ -18,6 +18,16 @@ void main() {
 
 export class WavenerdDeck {
   /**
+   * Threshold of time error, in seconds.
+   */
+  public timeErrorThreshold: number;
+
+  /**
+   * Its host deck.
+   */
+  public hostDeck?: WavenerdDeck;
+
+  /**
    * Its current cue status.
    * `'none'`: There is nothing in its current cue.
    * `'ready'`: There is a cue shader and is ready to be applied.
@@ -40,10 +50,10 @@ export class WavenerdDeck {
    * Its current bpm.
    */
   public get bpm(): number {
-    return this.__beatManager.bpm;
+    return this.beatManager.bpm;
   }
   public set bpm( value: number ) {
-    this.__beatManager.bpm = value;
+    this.beatManager.bpm = value;
   }
 
   /**
@@ -51,9 +61,11 @@ export class WavenerdDeck {
    */
   private __time = 0;
   public get time(): number {
-    let time = this.__time;
-    time += ( Date.now() - this.__dateLastUpdated ) / 1000.0;
-    return time;
+    if ( this.hostDeck ) {
+      return this.hostDeck.time;
+    }
+
+    return this.__time;
   }
 
   /**
@@ -96,12 +108,20 @@ export class WavenerdDeck {
   }
 
   private __beatManager: BeatManager;
+  public get beatManager(): BeatManager {
+    const hostDeckBeatManager = this.hostDeck?.beatManager;
+    if ( hostDeckBeatManager ) {
+      return hostDeckBeatManager;
+    }
+
+    return this.__beatManager;
+  }
+
   private __bufferQuad: GLCatBuffer;
   private __framebufferTexture: GLCatTexture;
   private __framebuffer: GLCatFramebuffer;
   private __program: WavenerdProgram | null = null;
   private __programCue: WavenerdProgram | null = null;
-  private __dateLastUpdated = Date.now();
   private __pixelBuffer: Float32Array;
   private __samples: Array<{
     name: string,
@@ -113,16 +133,38 @@ export class WavenerdDeck {
   /**
    * Constructor of the WavenerdDeck.
    */
-  public constructor( { glCat, audio, bufferSize, bpm }: {
+  public constructor( {
+    glCat,
+    audio,
+    hostDeck,
+    bufferSize,
+    bpm,
+    timeErrorThreshold
+  }: {
     glCat: GLCat;
     audio: AudioContext;
+    hostDeck?: WavenerdDeck;
     bufferSize?: number;
     bpm?: number;
+    timeErrorThreshold?: number;
   } ) {
+    this.timeErrorThreshold = timeErrorThreshold ?? 0.01;
     this.__bufferSize = bufferSize ?? 2048;
-    this.__glCat = glCat;
+
+    // -- host deck --------------------------------------------------------------------------------
+    if ( hostDeck ) {
+      this.hostDeck = hostDeck;
+    }
+
+    // -- beat manager -----------------------------------------------------------------------------
     this.__beatManager = new BeatManager();
     this.__beatManager.bpm = bpm ?? 140;
+    this.__beatManager.on( 'changeBPM', ( { bpm } ) => {
+      this.__emit( 'changeBPM', { bpm } );
+    } );
+
+    // -- glCat ------------------------------------------------------------------------------------
+    this.__glCat = glCat;
     this.__bufferQuad = this.__glCat.createBuffer()!;
     this.__bufferQuad.setVertexbuffer( new Float32Array( [ -1, -1, 1, -1, -1, 1, 1, 1 ] ) );
     this.__framebufferTexture = this.__glCat.createTexture()!;
@@ -130,6 +172,8 @@ export class WavenerdDeck {
     this.__framebuffer = this.__glCat.createFramebuffer()!;
     this.__framebuffer.attachTexture( this.__framebufferTexture );
     this.__pixelBuffer = new Float32Array( this.__bufferSize * 2 );
+
+    // -- audio ------------------------------------------------------------------------------------
     this.__audio = audio;
     this.__node = audio.createScriptProcessor( this.__bufferSize, 2, 2 );
     this.__node.onaudioprocess = ( event ) => this.__handleProcess( event );
@@ -233,12 +277,15 @@ export class WavenerdDeck {
   }
 
   private __handleProcess( event: AudioProcessingEvent ): void {
-    const deltaTime = this.bufferSize / this.sampleRate;
-    this.__time = this.__time + deltaTime;
-    this.__dateLastUpdated = Date.now();
+    let time = this.__time + this.__bufferSize / this.__audio.sampleRate;
+    if ( this.timeErrorThreshold < Math.abs( time - event.playbackTime ) ) {
+      time = event.playbackTime;
+    }
+    this.__time = time;
 
-    this.__beatManager.update( deltaTime );
-    const { bar } = this.__beatManager;
+    this.beatManager.update( time );
+
+    const { bar } = this.beatManager;
 
     const outL = event.outputBuffer.getChannelData( 0 );
     const outR = event.outputBuffer.getChannelData( 1 );
@@ -279,6 +326,9 @@ export class WavenerdDeck {
         }
       }
     }
+
+    // emit an event
+    this.__emit( 'process' );
   }
 
   private __render(): void {
@@ -289,11 +339,18 @@ export class WavenerdDeck {
       beatSeconds,
       barSeconds,
       sixteenBarSeconds
-    } = this.__beatManager;
+    } = this.beatManager;
     const { gl } = this.__glCat;
 
     // render
+    gl.viewport( 0, 0, this.__bufferSize / 2, 1 );
+    gl.bindFramebuffer( gl.FRAMEBUFFER, this.__framebuffer.raw );
+    gl.blendFunc( GL.ONE, GL.ZERO );
+    gl.clear( GL.DEPTH_BUFFER_BIT | GL.COLOR_BUFFER_BIT );
+
     if ( this.__program ) {
+      this.__glCat.useProgram( this.__program.program );
+
       this.__samples.forEach( ( sample ) => {
         this.__program!.program.uniformTexture( sample.name, sample.texture );
         this.__program!.program.uniform4f(
@@ -304,12 +361,6 @@ export class WavenerdDeck {
           sample.duration
         );
       } );
-
-      this.__glCat.useProgram( this.__program.program );
-      gl.viewport( 0, 0, this.__bufferSize / 2, 1 );
-      gl.bindFramebuffer( gl.FRAMEBUFFER, this.__framebuffer.raw );
-      gl.blendFunc( GL.ONE, GL.ZERO );
-      gl.clear( GL.DEPTH_BUFFER_BIT | GL.COLOR_BUFFER_BIT );
 
       this.__program.program.attribute( 'p', this.__bufferQuad, 2 );
       this.__program.program.uniform1f( 'bpm', this.bpm );
@@ -326,11 +377,13 @@ export class WavenerdDeck {
         beat * beatSeconds,
         bar * barSeconds,
         sixteenBar * sixteenBarSeconds,
-        this.__time
+        this.time
       );
 
       gl.drawArrays( gl.TRIANGLE_STRIP, 0, 4 );
     }
+
+    gl.flush();
 
     // read
     gl.readPixels(
@@ -351,7 +404,9 @@ export class WavenerdDeck {
 }
 
 export interface WavenerdDeck extends EventEmittable<{
+  process: void;
   changeCueStatus: { cueStatus: 'none' | 'ready' | 'applying' };
+  changeBPM: { bpm: number };
   error: { error: any };
 }> {}
 applyMixins( WavenerdDeck, [ EventEmittable ] );

@@ -65,5 +65,5 @@ vec2 mainAudio( vec4 time ) {
   vec2 aAmen = clip( 4.0 * sample( sampleAmen, sampleAmen_meta, amenTime ) );
   dest += 0.2 * aAmen;
 
-  return 0.04 * dest;
+  return dest;
 }
