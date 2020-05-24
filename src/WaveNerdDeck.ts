@@ -10,6 +10,13 @@ interface WavenerdProgram {
   requiredSamples: { [ name: string ]: true };
 }
 
+interface WavenerdDeckSampleEntry {
+  name: string;
+  texture: GLCatTexture;
+  sampleRate: number;
+  duration: number;
+}
+
 const vertQuad = `attribute vec2 p;
 void main() {
   gl_Position = vec4( p, 0.0, 1.0 );
@@ -123,12 +130,15 @@ export class WavenerdDeck {
   private __program: WavenerdProgram | null = null;
   private __programCue: WavenerdProgram | null = null;
   private __pixelBuffer: Float32Array;
-  private __samples: Array<{
-    name: string,
-    texture: GLCatTexture,
-    sampleRate: number,
-    duration: number
-  }> = [];
+
+  private __samples: WavenerdDeckSampleEntry[] = [];
+  private get samples(): WavenerdDeckSampleEntry[] {
+    if ( this.hostDeck ) {
+      return this.hostDeck.samples;
+    }
+
+    return this.__samples;
+  }
 
   /**
    * Constructor of the WavenerdDeck.
