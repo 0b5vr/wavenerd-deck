@@ -272,6 +272,9 @@ export class WavenerdDeck {
       texture.setTextureFromFloatArray( width, height, buffer, GL.RGBA );
       texture.textureFilter( GL.NEAREST );
 
+      // overwrite?
+      this.deleteSample( name );
+
       this.__samples.push( {
         name,
         texture,
