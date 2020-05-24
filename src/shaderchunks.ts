@@ -36,6 +36,8 @@ vec2 sample( sampler2D s, vec4 meta, float time ) {
 }
 `;
 
+export const shaderchunkPreLines = shaderchunkPre.split( '\n' ).length;
+
 export const shaderchunkPost = `void main() {
   float off = floor( gl_FragCoord.x ) * 2.0;
   gl_FragColor = vec4(

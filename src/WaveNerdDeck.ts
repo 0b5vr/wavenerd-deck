@@ -1,5 +1,5 @@
 import { GL, GLCat, GLCatBuffer, GLCatFramebuffer, GLCatProgram, GLCatTexture } from '@fms-cat/glcat-ts';
-import { shaderchunkPost, shaderchunkPre } from './shaderchunks';
+import { shaderchunkPost, shaderchunkPre, shaderchunkPreLines } from './shaderchunks';
 import { BeatManager } from './BeatManager';
 import { EventEmittable } from './utils/EventEmittable';
 import { applyMixins } from './utils/applyMixins';
@@ -201,11 +201,12 @@ export class WavenerdDeck {
       vertQuad,
       shaderchunkPre + code + shaderchunkPost
     ).catch( ( e ) => {
-      this.__lastError = e;
+      const error = this.__processErrorMessage( e );
+      this.__lastError = error;
       this.__programCue = null;
       this.__setCueStatus( 'none' );
-      this.__emit( 'error', { error: e } );
-      throw e;
+      this.__emit( 'error', { error } );
+      throw new Error( error ?? undefined );
     } );
 
     const requiredSamples = this.__samples.reduce( ( accum, sample ) => {
@@ -221,6 +222,7 @@ export class WavenerdDeck {
       requiredSamples
     };
     this.__setCueStatus( 'ready' );
+    this.__emit( 'error', { error: null } );
     this.__lastError = null;
   }
 
@@ -401,12 +403,22 @@ export class WavenerdDeck {
     this.__cueStatus = cueStatus;
     this.__emit( 'changeCueStatus', { cueStatus } );
   }
+
+  private __processErrorMessage( error: any ): string | null {
+    const str: string | undefined = error?.message;
+    if ( !str ) { return null; }
+
+    return str.replace( /ERROR: (\d+):(\d+)/g, ( match, ...args ) => {
+      const line = parseInt( args[ 1 ] ) - shaderchunkPreLines + 1;
+      return `ERROR: ${ args[ 0 ], line }`;
+    } );
+  }
 }
 
 export interface WavenerdDeck extends EventEmittable<{
   process: void;
   changeCueStatus: { cueStatus: 'none' | 'ready' | 'applying' };
   changeBPM: { bpm: number };
-  error: { error: any };
+  error: { error: string | null };
 }> {}
 applyMixins( WavenerdDeck, [ EventEmittable ] );
