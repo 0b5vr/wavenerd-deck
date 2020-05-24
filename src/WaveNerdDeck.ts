@@ -410,7 +410,7 @@ export class WavenerdDeck {
 
     return str.replace( /ERROR: (\d+):(\d+)/g, ( match, ...args ) => {
       const line = parseInt( args[ 1 ] ) - shaderchunkPreLines + 1;
-      return `ERROR: ${ args[ 0 ], line }`;
+      return `ERROR: ${ args[ 0 ] }:${ line }`;
     } );
   }
 }
