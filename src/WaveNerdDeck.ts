@@ -4,7 +4,7 @@ import { BeatManager } from './BeatManager';
 import { EventEmittable } from './utils/EventEmittable';
 import { applyMixins } from './utils/applyMixins';
 
-interface WavenerdProgram {
+interface WavenerdDeckProgram {
   program: GLCatProgram;
   code: string;
   requiredSamples: { [ name: string ]: true };
@@ -127,8 +127,8 @@ export class WavenerdDeck {
   private __bufferQuad: GLCatBuffer;
   private __framebufferTexture: GLCatTexture;
   private __framebuffer: GLCatFramebuffer;
-  private __program: WavenerdProgram | null = null;
-  private __programCue: WavenerdProgram | null = null;
+  private __program: WavenerdDeckProgram | null = null;
+  private __programCue: WavenerdDeckProgram | null = null;
   private __pixelBuffer: Float32Array;
 
   private __samples: WavenerdDeckSampleEntry[] = [];
