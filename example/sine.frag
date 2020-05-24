@@ -10,14 +10,12 @@
 #define PI 3.14159265359
 #define TAU 6.28318530718
 
-uniform sampler2D sampleAmen;
-uniform vec4 sampleAmen_meta;
-uniform sampler2D sampleNoise;
-uniform vec4 sampleNoise_meta;
-uniform sampler2D sample909OH;
-uniform vec4 sample909OH_meta;
-uniform sampler2D sampleCrash;
-uniform vec4 sampleCrash_meta;
+uniform sampler2D sample_amen;
+uniform vec4 sample_amen_meta;
+uniform sampler2D sample_909oh;
+uniform vec4 sample_909oh_meta;
+uniform sampler2D sample_crash;
+uniform vec4 sample_crash_meta;
 
 float kick( float t ) {
   if ( t < 0.0 ) { return 0.0; }
@@ -51,18 +49,18 @@ vec2 mainAudio( vec4 time ) {
   dest += 0.3 * aKick;
 
   float tHihat = mod( time.x - 0.5 beat, 1.0 beat );
-  vec2 aHihat = sample( sample909OH, sample909OH_meta, tHihat );
+  vec2 aHihat = sample( sample_909oh, sample_909oh_meta, tHihat );
   dest += 0.3 * aHihat;
 
   float tCrash = time.z; // time.z = 16 bars
-  vec2 aCrash = sample( sampleCrash, sampleCrash_meta, tCrash );
+  vec2 aCrash = sample( sample_crash, sample_crash_meta, tCrash );
   dest += 0.3 * aCrash;
 
   vec2 aRim = sidechain * rimshot( mod( time.x, 15.0 / BPM ) );
   dest += 0.2 * aRim;
 
   float amenTime = time.y / AMEN_BPM * BPM;
-  vec2 aAmen = clip( 4.0 * sample( sampleAmen, sampleAmen_meta, amenTime ) );
+  vec2 aAmen = clip( 4.0 * sample( sample_amen, sample_amen_meta, amenTime ) );
   dest += 0.2 * aAmen;
 
   return dest;

@@ -367,9 +367,9 @@ export class WavenerdDeck {
       this.__glCat.useProgram( this.__program.program );
 
       this.samples.forEach( ( sample ) => {
-        this.__program!.program.uniformTexture( sample.name, sample.texture );
+        this.__program!.program.uniformTexture( 'sample_' + sample.name, sample.texture );
         this.__program!.program.uniform4f(
-          sample.name + '_meta',
+          'sample_' + sample.name + '_meta',
           sample.texture.width,
           sample.texture.height,
           sample.sampleRate,

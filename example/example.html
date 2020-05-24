@@ -26,19 +26,15 @@
 
   await fetch( './samples/amen.ogg' )
   .then( ( res ) => res.arrayBuffer() )
-  .then( ( buffer ) => wavenerdDeck.loadSample( 'sampleAmen', buffer ) );
-
-  await fetch( './samples/noise.wav' )
-  .then( ( res ) => res.arrayBuffer() )
-  .then( ( buffer ) => wavenerdDeck.loadSample( 'sampleNoise', buffer ) );
+  .then( ( buffer ) => wavenerdDeck.loadSample( 'amen', buffer ) );
 
   await fetch( './samples/crash.ogg' )
   .then( ( res ) => res.arrayBuffer() )
-  .then( ( buffer ) => wavenerdDeck.loadSample( 'sampleCrash', buffer ) );
+  .then( ( buffer ) => wavenerdDeck.loadSample( 'crash', buffer ) );
 
   await fetch( './samples/909oh.ogg' )
   .then( ( res ) => res.arrayBuffer() )
-  .then( ( buffer ) => wavenerdDeck.loadSample( 'sample909OH', buffer ) );
+  .then( ( buffer ) => wavenerdDeck.loadSample( '909oh', buffer ) );
 
   const frag = await fetch( './sine.frag' )
     .then( ( res ) => res.text() );
