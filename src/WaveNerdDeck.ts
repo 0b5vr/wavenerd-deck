@@ -291,6 +291,17 @@ export class WavenerdDeck {
     } );
   }
 
+  /**
+   * Delete a sample.
+   */
+  public deleteSample( name: string ): void {
+    const index = this.__samples.findIndex( ( sample ) => sample.name === name );
+    if ( index !== -1 ) {
+      this.__samples.splice( index, 1 );
+      this.__emit( 'deleteSample', { name } );
+    }
+  }
+
   private __handleProcess( event: AudioProcessingEvent ): void {
     let time = this.__time + this.__bufferSize / this.__audio.sampleRate;
     if ( this.timeErrorThreshold < Math.abs( time - event.playbackTime ) ) {
@@ -432,6 +443,7 @@ export interface WavenerdDeck extends EventEmittable<{
   process: void;
   changeCueStatus: { cueStatus: 'none' | 'ready' | 'applying' };
   loadSample: { name: string; sampleRate: number; duration: number }
+  deleteSample: { name: string };
   changeBPM: { bpm: number };
   error: { error: string | null };
 }> {}
