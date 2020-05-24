@@ -219,7 +219,7 @@ export class WavenerdDeck {
       throw new Error( error ?? undefined );
     } );
 
-    const requiredSamples = this.__samples.reduce( ( accum, sample ) => {
+    const requiredSamples = this.samples.reduce( ( accum, sample ) => {
       if ( code.search( sample.name ) !== -1 ) {
         accum[ sample.name ] = true;
       }
@@ -251,6 +251,7 @@ export class WavenerdDeck {
   public async loadSample( name: string, buffer: ArrayBuffer ): Promise<void> {
     this.__audio.decodeAudioData( buffer )
     .then( ( audioBuffer ) => {
+      const { sampleRate, duration } = audioBuffer;
       const frames = audioBuffer.length;
       const width = 2048;
       const lengthCeiled = Math.ceil( frames / 2048.0 );
@@ -274,8 +275,8 @@ export class WavenerdDeck {
       this.__samples.push( {
         name,
         texture,
-        sampleRate: audioBuffer.sampleRate,
-        duration: audioBuffer.duration
+        sampleRate,
+        duration
       } );
 
       if ( this.__program && this.__program.code.search( name ) ) {
@@ -285,6 +286,8 @@ export class WavenerdDeck {
       if ( this.__programCue && this.__programCue.code.search( name ) ) {
         this.__programCue.requiredSamples[ name ] = true;
       }
+
+      this.__emit( 'loadSample', { name, duration, sampleRate } );
     } );
   }
 
@@ -363,7 +366,7 @@ export class WavenerdDeck {
     if ( this.__program ) {
       this.__glCat.useProgram( this.__program.program );
 
-      this.__samples.forEach( ( sample ) => {
+      this.samples.forEach( ( sample ) => {
         this.__program!.program.uniformTexture( sample.name, sample.texture );
         this.__program!.program.uniform4f(
           sample.name + '_meta',
@@ -428,6 +431,7 @@ export class WavenerdDeck {
 export interface WavenerdDeck extends EventEmittable<{
   process: void;
   changeCueStatus: { cueStatus: 'none' | 'ready' | 'applying' };
+  loadSample: { name: string; sampleRate: number; duration: number }
   changeBPM: { bpm: number };
   error: { error: string | null };
 }> {}
