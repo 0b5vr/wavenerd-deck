@@ -7,7 +7,7 @@ import { applyMixins } from './utils/applyMixins';
 interface WavenerdDeckProgram {
   program: GLCatProgram;
   code: string;
-  requiredSamples: { [ name: string ]: true };
+  requiredSamples: Set<string>;
 }
 
 interface WavenerdDeckSampleEntry {
@@ -131,8 +131,8 @@ export class WavenerdDeck {
   private __programCue: WavenerdDeckProgram | null = null;
   private __pixelBuffer: Float32Array;
 
-  private __samples: WavenerdDeckSampleEntry[] = [];
-  private get samples(): WavenerdDeckSampleEntry[] {
+  private __samples = new Map<string, WavenerdDeckSampleEntry>();
+  private get samples(): Map<string, WavenerdDeckSampleEntry> {
     if ( this.hostDeck ) {
       return this.hostDeck.samples;
     }
@@ -219,12 +219,12 @@ export class WavenerdDeck {
       throw new Error( error ?? undefined );
     } );
 
-    const requiredSamples = this.samples.reduce( ( accum, sample ) => {
-      if ( code.search( sample.name ) !== -1 ) {
-        accum[ sample.name ] = true;
+    const requiredSamples = new Set<string>();
+    for ( const name of this.samples.keys() ) {
+      if ( code.search( 'sample_' + name ) !== -1 ) {
+        requiredSamples.add( name );
       }
-      return accum;
-    }, {} as { [ name: string ]: true } );
+    }
 
     this.__programCue = {
       program,
@@ -272,22 +272,22 @@ export class WavenerdDeck {
       texture.setTextureFromFloatArray( width, height, buffer, GL.RGBA );
       texture.textureFilter( GL.NEAREST );
 
-      // overwrite?
-      this.deleteSample( name );
-
-      this.__samples.push( {
+      this.__samples.set(
         name,
-        texture,
-        sampleRate,
-        duration
-      } );
+        {
+          name,
+          texture,
+          sampleRate,
+          duration
+        }
+      );
 
-      if ( this.__program && this.__program.code.search( name ) ) {
-        this.__program.requiredSamples[ name ] = true;
+      if ( this.__program && this.__program.code.search( 'sample_' + name ) ) {
+        this.__program.requiredSamples.add( name );
       }
 
-      if ( this.__programCue && this.__programCue.code.search( name ) ) {
-        this.__programCue.requiredSamples[ name ] = true;
+      if ( this.__programCue && this.__programCue.code.search( 'sample_' + name ) ) {
+        this.__programCue.requiredSamples.add( name );
       }
 
       this.__emit( 'loadSample', { name, duration, sampleRate } );
@@ -298,9 +298,8 @@ export class WavenerdDeck {
    * Delete a sample.
    */
   public deleteSample( name: string ): void {
-    const index = this.__samples.findIndex( ( sample ) => sample.name === name );
-    if ( index !== -1 ) {
-      this.__samples.splice( index, 1 );
+    if ( this.__samples.has( name ) ) {
+      this.__samples.delete( name );
       this.__emit( 'deleteSample', { name } );
     }
   }
