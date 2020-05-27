@@ -318,21 +318,25 @@ export class WavenerdDeck {
     const outL = event.outputBuffer.getChannelData( 0 );
     const outR = event.outputBuffer.getChannelData( 1 );
 
-    // render
-    this.__render();
-
     // should I process the next program?
     const { sampleRate, __bufferSize: bufferSize } = this;
     const beginNext = Math.min( bufferSize, Math.floor( ( 1.0 - bar ) * sampleRate ) );
+    const bufferWidth = this.__bufferSize / 2;
+    const viewportWidth = this.__cueStatus === 'applying'
+      ? Math.floor( beginNext / 2 )
+      : bufferWidth;
 
-    // insert into its audio buffer
-    for ( let i = 0; i < bufferSize; i ++ ) {
-      outL[ i ] = this.__pixelBuffer[ i * 2 + 0 ];
-      outR[ i ] = this.__pixelBuffer[ i * 2 + 1 ];
-    }
+    // render
+    const { gl } = this.__glCat;
+
+    gl.bindFramebuffer( gl.FRAMEBUFFER, this.__framebuffer.raw );
+    gl.blendFunc( GL.ONE, GL.ZERO );
+
+    gl.viewport( 0, 0, viewportWidth, 1 );
+    this.__render();
 
     // process the next program??
-    if ( this.__cueStatus === 'applying' && beginNext < bufferSize ) {
+    if ( viewportWidth !== bufferWidth ) {
       this.__setCueStatus( 'none' );
 
       if ( this.__programCue ) {
@@ -345,14 +349,28 @@ export class WavenerdDeck {
         this.__programCue = null;
 
         // render
+        const viewportWidthCue = bufferWidth - viewportWidth;
+        gl.viewport( viewportWidth, 0, viewportWidthCue, 1 );
         this.__render();
-
-        // insert into its audio buffer
-        for ( let i = beginNext; i < bufferSize; i ++ ) {
-          outL[ i ] = this.__pixelBuffer[ i * 2 + 0 ];
-          outR[ i ] = this.__pixelBuffer[ i * 2 + 1 ];
-        }
       }
+    }
+
+    // read pixels
+    gl.flush();
+    gl.readPixels(
+      0, // x
+      0, // y
+      this.bufferSize / 2, // width
+      1, // height
+      GL.RGBA, // format
+      GL.FLOAT, // type
+      this.__pixelBuffer // dst
+    );
+
+    // insert into its audio buffer
+    for ( let i = 0; i < bufferSize; i ++ ) {
+      outL[ i ] = this.__pixelBuffer[ i * 2 + 0 ];
+      outR[ i ] = this.__pixelBuffer[ i * 2 + 1 ];
     }
 
     // emit an event
@@ -371,11 +389,6 @@ export class WavenerdDeck {
     const { gl } = this.__glCat;
 
     // render
-    gl.viewport( 0, 0, this.__bufferSize / 2, 1 );
-    gl.bindFramebuffer( gl.FRAMEBUFFER, this.__framebuffer.raw );
-    gl.blendFunc( GL.ONE, GL.ZERO );
-    gl.clear( GL.DEPTH_BUFFER_BIT | GL.COLOR_BUFFER_BIT );
-
     if ( this.__program ) {
       this.__glCat.useProgram( this.__program.program );
 
@@ -410,19 +423,6 @@ export class WavenerdDeck {
 
       gl.drawArrays( gl.TRIANGLE_STRIP, 0, 4 );
     }
-
-    gl.flush();
-
-    // read
-    gl.readPixels(
-      0, // x
-      0, // y
-      this.bufferSize / 2, // width
-      1, // height
-      GL.RGBA, // format
-      GL.FLOAT, // type
-      this.__pixelBuffer // dst
-    );
   }
 
   private __setCueStatus( cueStatus: 'none' | 'ready' | 'applying' ): void {
