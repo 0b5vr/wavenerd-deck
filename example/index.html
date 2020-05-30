@@ -36,7 +36,7 @@
   .then( ( res ) => res.arrayBuffer() )
   .then( ( buffer ) => wavenerdDeck.loadSample( '909oh', buffer ) );
 
-  const frag = await fetch( './sine.frag' )
+  const frag = await fetch( './example.frag' )
     .then( ( res ) => res.text() );
 
   textarea.value = frag;
