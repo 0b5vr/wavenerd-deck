@@ -16,7 +16,8 @@
     "build": "yarn build-dev && yarn build-prod && yarn build-types",
     "build-dev": "webpack --mode development",
     "build-prod": "webpack --mode production",
-    "build-types": "tsc --emitDeclarationOnly"
+    "build-types": "tsc --emitDeclarationOnly",
+    "lint": "eslint src/**/*.ts"
   },
   "devDependencies": {
     "@fms-cat/glcat-ts": "^0.10.0",
