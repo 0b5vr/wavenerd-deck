@@ -1,6 +1,6 @@
+import { BeatManager, BeatManagerUpdateEvent } from './BeatManager';
 import { GL, GLCat, GLCatBuffer, GLCatFramebuffer, GLCatProgram, GLCatTexture } from '@fms-cat/glcat-ts';
 import { shaderchunkPost, shaderchunkPre, shaderchunkPreLines } from './shaderchunks';
-import { BeatManager } from './BeatManager';
 import { EventEmittable } from './utils/EventEmittable';
 import { applyMixins } from './utils/applyMixins';
 
@@ -31,6 +31,7 @@ export class WavenerdDeck {
 
   /**
    * Its host deck.
+   * It's highly recommended to connect the node of the host deck into the node of this deck, to ensure the timing consistency.
    */
   public hostDeck?: WavenerdDeck;
 
@@ -305,15 +306,18 @@ export class WavenerdDeck {
   }
 
   private __handleProcess( event: AudioProcessingEvent ): void {
-    let time = this.__time + this.__bufferSize / this.__audio.sampleRate;
-    if ( this.timeErrorThreshold < Math.abs( time - event.playbackTime ) ) {
-      time = event.playbackTime;
+    let time = this.time;
+    if ( !this.hostDeck ) {
+      time += this.__bufferSize / this.__audio.sampleRate;
+      if ( this.timeErrorThreshold < Math.abs( time - event.playbackTime ) ) {
+        time = event.playbackTime;
+      }
     }
     this.__time = time;
 
-    this.beatManager.update( time );
+    const beatManagerUpdateEvent = this.beatManager.update( time );
 
-    const { bar } = this.beatManager;
+    const { bar } = beatManagerUpdateEvent;
 
     const outL = event.outputBuffer.getChannelData( 0 );
     const outR = event.outputBuffer.getChannelData( 1 );
@@ -333,7 +337,7 @@ export class WavenerdDeck {
     gl.blendFunc( GL.ONE, GL.ZERO );
 
     gl.viewport( 0, 0, viewportWidth, 1 );
-    this.__render();
+    this.__render( beatManagerUpdateEvent );
 
     // process the next program??
     if ( viewportWidth !== bufferWidth ) {
@@ -351,7 +355,7 @@ export class WavenerdDeck {
         // render
         const viewportWidthCue = bufferWidth - viewportWidth;
         gl.viewport( viewportWidth, 0, viewportWidthCue, 1 );
-        this.__render();
+        this.__render( beatManagerUpdateEvent );
       }
     }
 
@@ -377,15 +381,17 @@ export class WavenerdDeck {
     this.__emit( 'process' );
   }
 
-  private __render(): void {
+  private __render( event: BeatManagerUpdateEvent ): void {
     const {
+      time,
       beat,
       bar,
       sixteenBar,
-      beatSeconds,
-      barSeconds,
-      sixteenBarSeconds
-    } = this.beatManager;
+      bpm
+    } = event;
+    const beatSeconds = BeatManager.CalcBeatSeconds( bpm );
+    const barSeconds = BeatManager.CalcBarSeconds( bpm );
+    const sixteenBarSeconds = BeatManager.CalcSixteenBarSeconds( bpm );
     const { gl } = this.__glCat;
 
     // render
@@ -418,7 +424,7 @@ export class WavenerdDeck {
         beat * beatSeconds,
         bar * barSeconds,
         sixteenBar * sixteenBarSeconds,
-        this.time
+        time
       );
 
       gl.drawArrays( gl.TRIANGLE_STRIP, 0, 4 );

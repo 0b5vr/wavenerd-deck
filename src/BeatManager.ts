@@ -2,6 +2,15 @@ import { EventEmittable } from './utils/EventEmittable';
 import { applyMixins } from './utils/applyMixins';
 import { mod } from './utils/mod';
 
+export interface BeatManagerUpdateEvent {
+  time: number;
+  deltaTime: number;
+  bpm: number;
+  beat: number;
+  bar: number;
+  sixteenBar: number;
+}
+
 export class BeatManager {
   public __bpm: number = 140.0;
   public get bpm(): number {
@@ -12,73 +21,62 @@ export class BeatManager {
     this.__emit( 'changeBPM', { bpm: value } );
   }
 
-  private __lastTime = 0.0;
-
+  private __time = 0.0;
   private __beat = 0.0;
-  public get beat(): number {
-    return this.__beat;
-  }
-
   private __bar = 0.0;
-  public get bar(): number {
-    return this.__bar;
-  }
-
   private __sixteenBar = 0.0;
-  public get sixteenBar(): number {
-    return this.__sixteenBar;
+
+  public static CalcBeatSeconds( bpm: number ): number {
+    return 60.0 / bpm;
   }
 
-  public get beatSeconds(): number {
-    return 60.0 / this.__bpm;
-  }
-
-  public get barSeconds(): number {
+  public static CalcBarSeconds( bpm: number ): number {
     // return this.beatLength * 4.0;
-    return 240.0 / this.__bpm;
+    return 240.0 / bpm;
   }
 
-  public get sixteenBarSeconds(): number {
+  public static CalcSixteenBarSeconds( bpm: number ): number {
     // return this.barLength * 16.0;
-    return 3840.0 / this.__bpm;
+    return 3840.0 / bpm;
   }
 
   public reset(): void {
-    this.__lastTime = 0.0;
+    this.__time = 0.0;
     this.__beat = 0.0;
     this.__bar = 0.0;
     this.__sixteenBar = 0.0;
   }
 
-  public update( time: number ): void {
-    const { beatSeconds, barSeconds, sixteenBarSeconds } = this;
+  public update( time: number ): BeatManagerUpdateEvent {
+    const beatSeconds = BeatManager.CalcBeatSeconds( this.__bpm );
+    const barSeconds = BeatManager.CalcBarSeconds( this.__bpm );
+    const sixteenBarSeconds = BeatManager.CalcSixteenBarSeconds( this.__bpm );
 
-    const deltaTime = time - this.__lastTime;
+    const deltaTime = time - this.__time;
 
     this.__beat = mod( this.__beat + deltaTime / beatSeconds, 1.0 );
     this.__bar = mod( this.__bar + deltaTime / barSeconds, 1.0 );
     this.__sixteenBar = mod( this.__sixteenBar + deltaTime / sixteenBarSeconds, 1.0 );
 
-    this.__lastTime = time;
+    this.__time = time;
 
-    this.__emit( 'update', {
+    const event = {
       time,
       deltaTime,
+      bpm: this.__bpm,
       beat: this.__beat,
       bar: this.__bar,
       sixteenBar: this.__sixteenBar
-    } );
+    };
+
+    this.__emit( 'update', event );
+
+    return event;
   }
 }
 
 export interface BeatManager extends EventEmittable<{
-  update: {
-    time: number;
-    deltaTime: number;
-    beat: number;
-    bar: number;
-    sixteenBar: number
-  };
+  update: BeatManagerUpdateEvent;
   changeBPM: { bpm: number };
 }> {}
 applyMixins( BeatManager, [ EventEmittable ] );
