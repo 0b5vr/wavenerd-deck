@@ -49,6 +49,7 @@
 
     spanStatus.innerText = (
       cueStatus === 'none' ? 'Awaiting cue' :
+      cueStatus === 'compiling' ? 'Compiling' :
       cueStatus === 'ready' ? 'Ready' :
       'Applying...'
     )
