@@ -55,6 +55,16 @@ export class WavenerdDeck {
   }
 
   /**
+   * Its chunk size.
+   */
+  private __chunkSize: number;
+  public get chunkSize(): number {
+    return this.__chunkSize;
+  }
+
+  private __chunkHead = 0;
+
+  /**
    * Its current bpm.
    */
   public get bpm(): number {
@@ -149,6 +159,7 @@ export class WavenerdDeck {
     audio,
     hostDeck,
     bufferSize,
+    chunkSize,
     bpm,
     timeErrorThreshold
   }: {
@@ -156,11 +167,13 @@ export class WavenerdDeck {
     audio: AudioContext;
     hostDeck?: WavenerdDeck;
     bufferSize?: number;
+    chunkSize?: number;
     bpm?: number;
     timeErrorThreshold?: number;
   } ) {
     this.timeErrorThreshold = timeErrorThreshold ?? 0.01;
     this.__bufferSize = bufferSize ?? 2048;
+    this.__chunkSize = chunkSize ?? 64;
 
     // -- host deck --------------------------------------------------------------------------------
     if ( hostDeck ) {
@@ -179,10 +192,15 @@ export class WavenerdDeck {
     this.__bufferQuad = this.__glCat.createBuffer()!;
     this.__bufferQuad.setVertexbuffer( new Float32Array( [ -1, -1, 1, -1, -1, 1, 1, 1 ] ) );
     this.__framebufferTexture = this.__glCat.createTexture()!;
-    this.__framebufferTexture.setTextureFromFloatArray( this.__bufferSize / 2, 1, null, GL.RGBA );
+    this.__framebufferTexture.setTextureFromFloatArray(
+      this.__bufferSize / 2,
+      this.__chunkSize,
+      null,
+      GL.RGBA
+    );
     this.__framebuffer = this.__glCat.createFramebuffer()!;
     this.__framebuffer.attachTexture( this.__framebufferTexture );
-    this.__pixelBuffer = new Float32Array( this.__bufferSize * 2 );
+    this.__pixelBuffer = new Float32Array( this.__bufferSize * 2 * this.__chunkSize );
 
     // -- audio ------------------------------------------------------------------------------------
     this.__audio = audio;
@@ -324,23 +342,24 @@ export class WavenerdDeck {
 
     // should I process the next program?
     const { sampleRate, __bufferSize: bufferSize } = this;
-    const beginNext = Math.min( bufferSize, Math.floor( ( 1.0 - bar ) * sampleRate ) );
-    const bufferWidth = this.__bufferSize / 2;
-    const viewportWidth = this.__cueStatus === 'applying'
-      ? Math.floor( beginNext / 2 )
-      : bufferWidth;
+    const beginNext = this.__cueStatus === 'applying'
+      ? Math.min( bufferSize, Math.floor( ( 1.0 - bar ) * sampleRate ) )
+      : bufferSize;
 
-    // render
-    const { gl } = this.__glCat;
+    if ( this.__chunkHead === 0 ) {
+      this.__prepareBuffer( beatManagerUpdateEvent );
+    }
 
-    gl.bindFramebuffer( gl.FRAMEBUFFER, this.__framebuffer.raw );
-    gl.blendFunc( GL.ONE, GL.ZERO );
+    // insert into its audio buffer
+    for ( let i = 0; i < beginNext; i ++ ) {
+      const chunkIndex = this.__chunkHead * this.__bufferSize * 2;
 
-    gl.viewport( 0, 0, viewportWidth, 1 );
-    this.__render( beatManagerUpdateEvent );
+      outL[ i ] = this.__pixelBuffer[ chunkIndex + i * 2 + 0 ];
+      outR[ i ] = this.__pixelBuffer[ chunkIndex + i * 2 + 1 ];
+    }
 
     // process the next program??
-    if ( viewportWidth !== bufferWidth ) {
+    if ( beginNext !== bufferSize ) {
       this.__setCueStatus( 'none' );
 
       if ( this.__programCue ) {
@@ -353,35 +372,25 @@ export class WavenerdDeck {
         this.__programCue = null;
 
         // render
-        const viewportWidthCue = bufferWidth - viewportWidth;
-        gl.viewport( viewportWidth, 0, viewportWidthCue, 1 );
-        this.__render( beatManagerUpdateEvent );
+        this.__prepareBuffer( beatManagerUpdateEvent );
+      }
+
+      this.__chunkHead = 0;
+
+      // insert into its audio buffer
+      for ( let i = beginNext; i < bufferSize; i ++ ) {
+        outL[ i ] = this.__pixelBuffer[ i * 2 + 0 ];
+        outR[ i ] = this.__pixelBuffer[ i * 2 + 1 ];
       }
     }
 
-    // read pixels
-    gl.flush();
-    gl.readPixels(
-      0, // x
-      0, // y
-      this.bufferSize / 2, // width
-      1, // height
-      GL.RGBA, // format
-      GL.FLOAT, // type
-      this.__pixelBuffer // dst
-    );
-
-    // insert into its audio buffer
-    for ( let i = 0; i < bufferSize; i ++ ) {
-      outL[ i ] = this.__pixelBuffer[ i * 2 + 0 ];
-      outR[ i ] = this.__pixelBuffer[ i * 2 + 1 ];
-    }
+    this.__chunkHead = ( this.__chunkHead + 1 ) % this.__chunkSize;
 
     // emit an event
     this.__emit( 'process' );
   }
 
-  private __render( event: BeatManagerUpdateEvent ): void {
+  private __prepareBuffer( event: BeatManagerUpdateEvent ): void {
     const {
       time,
       beat,
@@ -392,11 +401,15 @@ export class WavenerdDeck {
     const beatSeconds = BeatManager.CalcBeatSeconds( bpm );
     const barSeconds = BeatManager.CalcBarSeconds( bpm );
     const sixteenBarSeconds = BeatManager.CalcSixteenBarSeconds( bpm );
+    const { sampleRate, __bufferSize: bufferSize, __chunkSize: chunkSize } = this;
     const { gl } = this.__glCat;
 
     // render
     if ( this.__program ) {
       this.__glCat.useProgram( this.__program.program );
+      gl.viewport( 0, 0, this.__bufferSize / 2, this.__chunkSize );
+      gl.bindFramebuffer( gl.FRAMEBUFFER, this.__framebuffer.raw );
+      gl.blendFunc( GL.ONE, GL.ZERO );
 
       this.samples.forEach( ( sample ) => {
         this.__program!.program.uniformTexture( 'sample_' + sample.name, sample.texture );
@@ -411,7 +424,8 @@ export class WavenerdDeck {
 
       this.__program.program.attribute( 'p', this.__bufferQuad, 2 );
       this.__program.program.uniform1f( 'bpm', this.bpm );
-      this.__program.program.uniform1f( '_deltaSample', 1.0 / this.sampleRate );
+      this.__program.program.uniform1f( '_deltaSample', 1.0 / sampleRate );
+      this.__program.program.uniform1f( '_deltaChunk', this.__bufferSize / sampleRate );
       this.__program.program.uniform4f(
         'timeLength',
         beatSeconds,
@@ -428,6 +442,18 @@ export class WavenerdDeck {
       );
 
       gl.drawArrays( gl.TRIANGLE_STRIP, 0, 4 );
+
+      // read pixels
+      gl.flush();
+      gl.readPixels(
+        0, // x
+        0, // y
+        bufferSize / 2, // width
+        chunkSize, // height
+        GL.RGBA, // format
+        GL.FLOAT, // type
+        this.__pixelBuffer // dst
+      );
     }
   }
 

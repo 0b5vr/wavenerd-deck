@@ -6,6 +6,7 @@ uniform float bpm;
 uniform vec4 timeLength;
 uniform float sampleRate;
 uniform float _deltaSample;
+uniform float _deltaChunk;
 uniform vec4 _timeHead;
 
 vec2 sampleNearest( sampler2D s, vec4 meta, float time ) {
@@ -40,8 +41,9 @@ export const shaderchunkPreLines = shaderchunkPre.split( '\n' ).length;
 
 export const shaderchunkPost = `void main() {
   float off = floor( gl_FragCoord.x ) * 2.0;
+  vec4 head = _timeHead + _deltaChunk * floor( gl_FragCoord.y );
   gl_FragColor = vec4(
-    mainAudio( mod( _timeHead + ( off ) * _deltaSample, timeLength ) ),
-    mainAudio( mod( _timeHead + ( off + 1.0 ) * _deltaSample, timeLength ) )
+    mainAudio( mod( head + ( off ) * _deltaSample, timeLength ) ),
+    mainAudio( mod( head + ( off + 1.0 ) * _deltaSample, timeLength ) )
   );
 }`;
