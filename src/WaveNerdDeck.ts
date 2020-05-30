@@ -184,6 +184,7 @@ export class WavenerdDeck {
     this.__beatManager = new BeatManager();
     this.__beatManager.bpm = bpm ?? 140;
     this.__beatManager.on( 'changeBPM', ( { bpm } ) => {
+      this.__chunkHead = 0;
       this.__emit( 'changeBPM', { bpm } );
     } );
 
