@@ -41,8 +41,8 @@ export class WavenerdDeck {
    * `'ready'`: There is a cue shader and is ready to be applied.
    * `'applying'`: There is a cue shader and is going to be applied in the next bar.
    */
-  private __cueStatus: 'none' | 'ready' | 'applying' = 'none';
-  public get cueStatus(): 'none' | 'ready' | 'applying' {
+  private __cueStatus: 'none' | 'compiling' | 'ready' | 'applying' = 'none';
+  public get cueStatus(): 'none' | 'compiling' | 'ready' | 'applying' {
     return this.__cueStatus;
   }
 
@@ -227,6 +227,7 @@ export class WavenerdDeck {
    * Compile given shader code and cue the shader.
    */
   public async compile( code: string ): Promise<void> {
+    this.__setCueStatus( 'compiling' );
     const program = await this.__glCat.lazyProgramAsync(
       vertQuad,
       shaderchunkPre + code + shaderchunkPost
@@ -459,7 +460,7 @@ export class WavenerdDeck {
     }
   }
 
-  private __setCueStatus( cueStatus: 'none' | 'ready' | 'applying' ): void {
+  private __setCueStatus( cueStatus: 'none' | 'compiling' | 'ready' | 'applying' ): void {
     this.__cueStatus = cueStatus;
     this.__emit( 'changeCueStatus', { cueStatus } );
   }
@@ -477,7 +478,7 @@ export class WavenerdDeck {
 
 export interface WavenerdDeck extends EventEmittable<{
   process: void;
-  changeCueStatus: { cueStatus: 'none' | 'ready' | 'applying' };
+  changeCueStatus: { cueStatus: 'none' | 'compiling' | 'ready' | 'applying' };
   loadSample: { name: string; sampleRate: number; duration: number }
   deleteSample: { name: string };
   changeBPM: { bpm: number };
