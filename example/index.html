@@ -18,6 +18,7 @@
   const glCat = new GLCat( gl );
 
   const audio = new AudioContext();
+  audio.resume();
 
   console.log( WAVENERD_DECK );
   const wavenerdDeck = new WAVENERD_DECK.WavenerdDeck( { glCat, audio } );
