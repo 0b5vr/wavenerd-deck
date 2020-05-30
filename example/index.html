@@ -18,7 +18,6 @@
   const glCat = new GLCat( gl );
 
   const audio = new AudioContext();
-  audio.resume();
 
   console.log( WAVENERD_DECK );
   const wavenerdDeck = new WAVENERD_DECK.WavenerdDeck( { glCat, audio } );
@@ -61,10 +60,12 @@
   } );
 
   buttonCompile.addEventListener( 'click', () => {
+    audio.resume(); // uh
     wavenerdDeck.compile( textarea.value );
   } );
 
   buttonApplyCue.addEventListener( 'click', () => {
+    audio.resume(); // uh
     wavenerdDeck.applyCue();
   } );
 } )();
