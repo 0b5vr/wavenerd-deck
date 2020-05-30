@@ -25,6 +25,11 @@ jobs:
       with:
         name: types
         path: types
+    - name: Upload Example
+      uses: actions/upload-artifact@v1
+      with:
+        name: example
+        path: example
   deploy:
     runs-on: ubuntu-latest
     needs: build
