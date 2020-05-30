@@ -22,8 +22,6 @@ export class BeatManager {
   }
 
   private __time = 0.0;
-  private __beat = 0.0;
-  private __bar = 0.0;
   private __sixteenBar = 0.0;
 
   public static CalcBeatSeconds( bpm: number ): number {
@@ -42,8 +40,6 @@ export class BeatManager {
 
   public reset(): void {
     this.__time = 0.0;
-    this.__beat = 0.0;
-    this.__bar = 0.0;
     this.__sixteenBar = 0.0;
   }
 
@@ -54,9 +50,11 @@ export class BeatManager {
 
     const deltaTime = time - this.__time;
 
-    this.__beat = mod( this.__beat + deltaTime / beatSeconds, 1.0 );
-    this.__bar = mod( this.__bar + deltaTime / barSeconds, 1.0 );
-    this.__sixteenBar = mod( this.__sixteenBar + deltaTime / sixteenBarSeconds, 1.0 );
+    this.__sixteenBar = mod( this.__sixteenBar + deltaTime, sixteenBarSeconds );
+
+    const sixteenBar = this.__sixteenBar;
+    const bar = mod( sixteenBar, barSeconds );
+    const beat = mod( bar, beatSeconds );
 
     this.__time = time;
 
@@ -64,9 +62,9 @@ export class BeatManager {
       time,
       deltaTime,
       bpm: this.__bpm,
-      beat: this.__beat,
-      bar: this.__bar,
-      sixteenBar: this.__sixteenBar
+      beat,
+      bar,
+      sixteenBar
     };
 
     this.__emit( 'update', event );

@@ -336,7 +336,8 @@ export class WavenerdDeck {
 
     const beatManagerUpdateEvent = this.beatManager.update( time );
 
-    const { bar } = beatManagerUpdateEvent;
+    const { bpm, bar } = beatManagerUpdateEvent;
+    const barSeconds = BeatManager.CalcBarSeconds( bpm );
 
     const outL = event.outputBuffer.getChannelData( 0 );
     const outR = event.outputBuffer.getChannelData( 1 );
@@ -344,7 +345,7 @@ export class WavenerdDeck {
     // should I process the next program?
     const { sampleRate, __bufferSize: bufferSize } = this;
     const beginNext = this.__cueStatus === 'applying'
-      ? Math.min( bufferSize, Math.floor( ( 1.0 - bar ) * sampleRate ) )
+      ? Math.min( bufferSize, Math.floor( ( barSeconds - bar ) * sampleRate ) )
       : bufferSize;
 
     if ( this.__chunkHead === 0 ) {
@@ -436,9 +437,9 @@ export class WavenerdDeck {
       );
       this.__program.program.uniform4f(
         '_timeHead',
-        beat * beatSeconds,
-        bar * barSeconds,
-        sixteenBar * sixteenBarSeconds,
+        beat,
+        bar,
+        sixteenBar,
         time
       );
 
