@@ -17,8 +17,10 @@ export class BeatManager {
     return this.__bpm;
   }
   public set bpm( value: number ) {
-    this.__bpm = value;
-    this.__emit( 'changeBPM', { bpm: value } );
+    const prevBpm = this.__bpm;
+    this.__bpm = Math.max( 0.0, value );
+    this.__sixteenBar = this.__sixteenBar * prevBpm / this.__bpm;
+    this.__emit( 'changeBPM', { bpm: this.__bpm } );
   }
 
   private __time = 0.0;
