@@ -9,9 +9,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
-    - uses: actions/setup-node@v1
-      with:
-        node-version: '14'
     - name: Fetch deps
       shell: bash
       run: yarn
@@ -38,6 +35,9 @@ jobs:
     needs: build
     steps:
     - uses: actions/checkout@v2
+    - uses: actions/setup-node@v1
+      with:
+        node-version: '14'
     - name: Download Builds
       uses: actions/download-artifact@v1
       with:
