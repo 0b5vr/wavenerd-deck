@@ -18,7 +18,7 @@ export declare class WavenerdDeck {
      * `'applying'`: There is a cue shader and is going to be applied in the next bar.
      */
     private __cueStatus;
-    get cueStatus(): 'none' | 'ready' | 'applying';
+    get cueStatus(): 'none' | 'compiling' | 'ready' | 'applying';
     /**
      * Its buffer size.
      */
@@ -114,7 +114,7 @@ export declare class WavenerdDeck {
 export interface WavenerdDeck extends EventEmittable<{
     process: void;
     changeCueStatus: {
-        cueStatus: 'none' | 'ready' | 'applying';
+        cueStatus: 'none' | 'compiling' | 'ready' | 'applying';
     };
     loadSample: {
         name: string;

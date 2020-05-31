@@ -12,8 +12,6 @@ export declare class BeatManager {
     get bpm(): number;
     set bpm(value: number);
     private __time;
-    private __beat;
-    private __bar;
     private __sixteenBar;
     static CalcBeatSeconds(bpm: number): number;
     static CalcBarSeconds(bpm: number): number;

@@ -36,7 +36,7 @@
   .then( ( res ) => res.arrayBuffer() )
   .then( ( buffer ) => wavenerdDeck.loadSample( '909oh', buffer ) );
 
-  const frag = await fetch( './sine.frag' )
+  const frag = await fetch( './example.frag' )
     .then( ( res ) => res.text() );
 
   textarea.value = frag;
@@ -49,6 +49,7 @@
 
     spanStatus.innerText = (
       cueStatus === 'none' ? 'Awaiting cue' :
+      cueStatus === 'compiling' ? 'Compiling' :
       cueStatus === 'ready' ? 'Ready' :
       'Applying...'
     )
@@ -60,10 +61,12 @@
   } );
 
   buttonCompile.addEventListener( 'click', () => {
+    audio.resume(); // uh
     wavenerdDeck.compile( textarea.value );
   } );
 
   buttonApplyCue.addEventListener( 'click', () => {
+    audio.resume(); // uh
     wavenerdDeck.applyCue();
   } );
 } )();
