@@ -1,23 +1,24 @@
 import { BeatManager, BeatManagerUpdateEvent } from './BeatManager';
-import { GL, GLCat, GLCatBuffer, GLCatFramebuffer, GLCatProgram, GLCatTexture } from '@fms-cat/glcat-ts';
+import type { GLCat, GLCatBuffer, GLCatFramebuffer, GLCatProgram, GLCatRenderbuffer, GLCatTexture } from '@fms-cat/glcat-ts';
 import { shaderchunkPost, shaderchunkPre, shaderchunkPreLines } from './shaderchunks';
 import { EventEmittable } from './utils/EventEmittable';
 import { applyMixins } from './utils/applyMixins';
 
 interface WavenerdDeckProgram {
-  program: GLCatProgram;
+  program: GLCatProgram<WebGL2RenderingContext>;
   code: string;
   requiredSamples: Set<string>;
 }
 
 interface WavenerdDeckSampleEntry {
   name: string;
-  texture: GLCatTexture;
+  texture: GLCatTexture<WebGL2RenderingContext>;
   sampleRate: number;
   duration: number;
 }
 
-const vertQuad = `attribute vec2 p;
+const vertQuad = `#version 300 es
+in vec2 p;
 void main() {
   gl_Position = vec4( p, 0.0, 1.0 );
 }
@@ -89,8 +90,8 @@ export class WavenerdDeck {
   /**
    * Its bound `GLCat`.
    */
-  private __glCat: GLCat;
-  public get glCat(): GLCat {
+  private __glCat: GLCat<WebGL2RenderingContext>;
+  public get glCat(): GLCat<WebGL2RenderingContext> {
     return this.__glCat;
   }
 
@@ -135,9 +136,9 @@ export class WavenerdDeck {
     return this.__beatManager;
   }
 
-  private __bufferQuad: GLCatBuffer;
-  private __framebufferTexture: GLCatTexture;
-  private __framebuffer: GLCatFramebuffer;
+  private __bufferQuad: GLCatBuffer<WebGL2RenderingContext>;
+  private __renderbuffer: GLCatRenderbuffer<WebGL2RenderingContext>;
+  private __framebuffer: GLCatFramebuffer<WebGL2RenderingContext>;
   private __program: WavenerdDeckProgram | null = null;
   private __programCue: WavenerdDeckProgram | null = null;
   private __pixelBuffer: Float32Array;
@@ -163,7 +164,7 @@ export class WavenerdDeck {
     bpm,
     timeErrorThreshold
   }: {
-    glCat: GLCat;
+    glCat: GLCat<WebGL2RenderingContext>;
     audio: AudioContext;
     hostDeck?: WavenerdDeck;
     bufferSize?: number;
@@ -190,17 +191,20 @@ export class WavenerdDeck {
 
     // -- glCat ------------------------------------------------------------------------------------
     this.__glCat = glCat;
-    this.__bufferQuad = this.__glCat.createBuffer()!;
+    const { gl } = glCat;
+    this.__bufferQuad = glCat.createBuffer()!;
     this.__bufferQuad.setVertexbuffer( new Float32Array( [ -1, -1, 1, -1, -1, 1, 1, 1 ] ) );
-    this.__framebufferTexture = this.__glCat.createTexture()!;
-    this.__framebufferTexture.setTextureFromFloatArray(
+    this.__renderbuffer = glCat.createRenderbuffer()!;
+    this.__renderbuffer.renderbufferStorage(
       this.__bufferSize / 2,
       this.__chunkSize,
-      null,
-      GL.RGBA
+      { format: gl.RGBA32F }
     );
-    this.__framebuffer = this.__glCat.createFramebuffer()!;
-    this.__framebuffer.attachTexture( this.__framebufferTexture );
+    this.__framebuffer = glCat.createFramebuffer()!;
+    this.__framebuffer.attachRenderbuffer(
+      this.__renderbuffer,
+      { attachment: gl.COLOR_ATTACHMENT0 }
+    );
     this.__pixelBuffer = new Float32Array( this.__bufferSize * 2 * this.__chunkSize );
 
     // -- audio ------------------------------------------------------------------------------------
@@ -289,9 +293,20 @@ export class WavenerdDeck {
         buffer[ i * 4 + 1 ] = dataR[ i ];
       }
 
+      const glCat = this.__glCat;
+      const { gl } = glCat;
       const texture = this.__glCat.createTexture()!;
-      texture.setTextureFromFloatArray( width, height, buffer, GL.RGBA );
-      texture.textureFilter( GL.NEAREST );
+      texture.setTextureFromArray(
+        width,
+        height,
+        buffer,
+        {
+          internalformat: gl.RGBA32F,
+          format: gl.RGBA,
+          type: gl.FLOAT,
+        }
+      );
+      texture.textureFilter( gl.NEAREST );
 
       this.__samples.set(
         name,
@@ -409,11 +424,6 @@ export class WavenerdDeck {
 
     // render
     if ( this.__program ) {
-      this.__glCat.useProgram( this.__program.program );
-      gl.viewport( 0, 0, this.__bufferSize / 2, this.__chunkSize );
-      gl.bindFramebuffer( gl.FRAMEBUFFER, this.__framebuffer.raw );
-      gl.blendFunc( GL.ONE, GL.ZERO );
-
       this.samples.forEach( ( sample ) => {
         this.__program!.program.uniformTexture( 'sample_' + sample.name, sample.texture );
         this.__program!.program.uniform4f(
@@ -444,19 +454,30 @@ export class WavenerdDeck {
         time
       );
 
-      gl.drawArrays( gl.TRIANGLE_STRIP, 0, 4 );
+      this.__glCat.useProgram( this.__program.program, () => {
+        this.__glCat.bindFramebuffer( this.__framebuffer, () => {
+          gl.viewport( 0, 0, this.__bufferSize / 2, this.__chunkSize );
+          gl.blendFunc( this.__glCat.gl.ONE, this.__glCat.gl.ZERO );
+
+          gl.drawArrays( gl.TRIANGLE_STRIP, 0, 4 );
+        } );
+      } );
 
       // read pixels
       gl.flush();
-      gl.readPixels(
-        0, // x
-        0, // y
-        bufferSize / 2, // width
-        chunkSize, // height
-        GL.RGBA, // format
-        GL.FLOAT, // type
-        this.__pixelBuffer // dst
-      );
+
+      this.__glCat.bindFramebuffer( this.__framebuffer, () => {
+        gl.readBuffer( this.__glCat.gl.COLOR_ATTACHMENT0 );
+        gl.readPixels(
+          0, // x
+          0, // y
+          bufferSize / 2, // width
+          chunkSize, // height
+          this.__glCat.gl.RGBA, // format
+          this.__glCat.gl.FLOAT, // type
+          this.__pixelBuffer // dst
+        );
+      } );
     }
   }
 
@@ -466,7 +487,7 @@ export class WavenerdDeck {
   }
 
   private __processErrorMessage( error: any ): string | null {
-    const str: string | undefined = error?.message;
+    const str: string | undefined = error?.message ?? error;
     if ( !str ) { return null; }
 
     return str.replace( /ERROR: (\d+):(\d+)/g, ( match, ...args ) => {
