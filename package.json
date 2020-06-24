@@ -19,7 +19,6 @@
     "/README.md"
   ],
   "scripts": {
-    "version": "yarn all",
     "all": "yarn lint && yarn clean && yarn build",
     "clean": "rimraf dist types",
     "dev": "webpack-dev-server --mode development",
