@@ -16,10 +16,10 @@
     esutils "^2.0.2"
     js-tokens "^4.0.0"
 
-"@fms-cat/glcat-ts@^0.13.0":
-  version "0.13.0"
-  resolved "https://registry.yarnpkg.com/@fms-cat/glcat-ts/-/glcat-ts-0.13.0.tgz#603f1e12fca1a380ca75a7a396718898327cecfc"
-  integrity sha512-c69x+AdA0P6f0tN3zMAROXufsIMMrsStEYHMmLxRFG4s5PI/Nb3zJmj/KQCzpWVqeBNs5+Q7raekAj2mrA5i5Q==
+"@fms-cat/glcat-ts@^0.13.1":
+  version "0.13.1"
+  resolved "https://registry.yarnpkg.com/@fms-cat/glcat-ts/-/glcat-ts-0.13.1.tgz#54e7e4227d2d73c5e8238a4737640591ed8ce9c3"
+  integrity sha512-pZrCX/1az/OJ++N6ikhlY4XLcLdC99V3yKpascRlZ7SvOJD6dl067GfwJaFqIO2ugXAYNA0O37/m1z+nrFaFKw==
 
 "@types/anymatch@*":
   version "1.3.1"
