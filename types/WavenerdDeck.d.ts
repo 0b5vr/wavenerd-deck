@@ -1,5 +1,5 @@
 import { BeatManager } from './BeatManager';
-import { GLCat } from '@fms-cat/glcat-ts';
+import type { GLCat } from '@fms-cat/glcat-ts';
 import { EventEmittable } from './utils/EventEmittable';
 export declare class WavenerdDeck {
     /**
@@ -44,7 +44,7 @@ export declare class WavenerdDeck {
      * Its bound `GLCat`.
      */
     private __glCat;
-    get glCat(): GLCat;
+    get glCat(): GLCat<WebGL2RenderingContext>;
     /**
      * Its last compile error happened in [[WavenerdDeck.compile]].
      */
@@ -67,7 +67,7 @@ export declare class WavenerdDeck {
     private __beatManager;
     get beatManager(): BeatManager;
     private __bufferQuad;
-    private __framebufferTexture;
+    private __renderbuffer;
     private __framebuffer;
     private __program;
     private __programCue;
@@ -78,7 +78,7 @@ export declare class WavenerdDeck {
      * Constructor of the WavenerdDeck.
      */
     constructor({ glCat, audio, hostDeck, bufferSize, chunkSize, bpm, timeErrorThreshold }: {
-        glCat: GLCat;
+        glCat: GLCat<WebGL2RenderingContext>;
         audio: AudioContext;
         hostDeck?: WavenerdDeck;
         bufferSize?: number;

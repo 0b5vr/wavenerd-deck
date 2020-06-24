@@ -49,18 +49,18 @@ vec2 mainAudio( vec4 time ) {
   dest += 0.3 * aKick;
 
   float tHihat = mod( time.x - 0.5 beat, 1.0 beat );
-  vec2 aHihat = sample( sample_909oh, sample_909oh_meta, tHihat );
+  vec2 aHihat = sampleSinc( sample_909oh, sample_909oh_meta, tHihat );
   dest += 0.3 * aHihat;
 
   float tCrash = time.z; // time.z = 16 bars
-  vec2 aCrash = sample( sample_crash, sample_crash_meta, tCrash );
+  vec2 aCrash = sampleSinc( sample_crash, sample_crash_meta, tCrash );
   dest += 0.3 * aCrash;
 
   vec2 aRim = sidechain * rimshot( mod( time.x, 15.0 / BPM ) );
   dest += 0.2 * aRim;
 
   float amenTime = time.y / AMEN_BPM * BPM;
-  vec2 aAmen = clip( 4.0 * sample( sample_amen, sample_amen_meta, amenTime ) );
+  vec2 aAmen = clip( 4.0 * sampleSinc( sample_amen, sample_amen_meta, amenTime ) );
   dest += 0.2 * aAmen;
 
   return dest;

@@ -10,12 +10,12 @@
 </body>
 
 <script src="../dist/wavenerd-deck.js"></script>
-<script src="https://unpkg.com/@fms-cat/glcat-ts@0.10.0/dist/glcat.js"></script>
+<script src="https://unpkg.com/@fms-cat/glcat-ts@0.13.0/dist/glcat.js"></script>
 <script>
 ( async() => {
   const canvas = document.createElement( 'canvas' );
-  const gl = canvas.getContext( 'webgl' );
-  const glCat = new GLCat( gl );
+  const gl = canvas.getContext( 'webgl2' );
+  const glCat = new GLCAT.GLCat( gl );
 
   const audio = new AudioContext();
 
