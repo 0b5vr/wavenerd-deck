@@ -49,6 +49,7 @@ jobs:
       with:
         name: types
         path: types
+    - run: npm install
     - run: npm publish
       env:
         NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
