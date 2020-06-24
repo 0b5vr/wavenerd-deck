@@ -192,6 +192,9 @@ export class WavenerdDeck {
     // -- glCat ------------------------------------------------------------------------------------
     this.__glCat = glCat;
     const { gl } = glCat;
+
+    glCat.getExtension( 'EXT_color_buffer_float' );
+
     this.__bufferQuad = glCat.createBuffer()!;
     this.__bufferQuad.setVertexbuffer( new Float32Array( [ -1, -1, 1, -1, -1, 1, 1, 1 ] ) );
     this.__renderbuffer = glCat.createRenderbuffer()!;
