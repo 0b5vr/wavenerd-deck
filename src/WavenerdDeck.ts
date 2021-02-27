@@ -134,10 +134,6 @@ export class WavenerdDeck {
 
   private __params = new Map<string, WavenerdDeckParamEntry>();
   private get params(): Map<string, WavenerdDeckParamEntry> {
-    if ( this.hostDeck ) {
-      return this.hostDeck.params;
-    }
-
     return this.__params;
   }
 
