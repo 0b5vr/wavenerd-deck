@@ -6,7 +6,8 @@
   BPM: <input id="inputBpm" type="number" value="190" /><br />
   <button id="buttonCompile">Compile</button>
   <button id="buttonApplyCue" disabled>Apply Cue</button><br />
-  <span id="spanStatus">Awaiting cue</span>
+  <span id="spanStatus">Awaiting cue</span><br />
+  <input id="inputUniformKnob" type="range" step="0.001" min="0" max="1" value="0" /> Knob
 </body>
 
 <script src="../dist/wavenerd-deck.js"></script>
@@ -75,6 +76,10 @@
   buttonApplyCue.addEventListener( 'click', () => {
     audio.resume(); // uh
     wavenerdDeck.applyCue();
+  } );
+
+  inputUniformKnob.addEventListener( 'input', () => {
+    wavenerdDeck.setParam( 'knob', parseFloat( inputUniformKnob.value ) );
   } );
 } )();
 </script>

@@ -15,6 +15,10 @@ in float off;
 out float outL;
 out float outR;
 
+float paramFetch( vec4 param ) {
+  return mix( param.x, param.y, exp( -param.z * off * _deltaSample ) );
+}
+
 vec2 sampleNearest( sampler2D s, vec4 meta, float time ) {
   if ( meta.w < time ) { return vec2( 0.0 ); }
   float x = time / meta.x * meta.z;

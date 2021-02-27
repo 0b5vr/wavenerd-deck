@@ -4,11 +4,19 @@ import { BeatManager } from './BeatManager';
 import { EventEmittable } from './utils/EventEmittable';
 import { Pool } from './Pool';
 import { applyMixins } from './utils/applyMixins';
+import { lerp } from './utils/lerp';
 
 interface WavenerdDeckProgram {
   program: GLCatProgram<WebGL2RenderingContext>;
   code: string;
   requiredSamples: Set<string>;
+}
+
+interface WavenerdDeckParamEntry {
+  name: string;
+  value: number;
+  factor: number;
+  target: number;
 }
 
 interface WavenerdDeckSampleEntry {
@@ -123,6 +131,15 @@ export class WavenerdDeck {
   private __program: WavenerdDeckProgram | null = null;
   private __programCue: WavenerdDeckProgram | null = null;
   private __programSwapTime: number = 0.0;
+
+  private __params = new Map<string, WavenerdDeckParamEntry>();
+  private get params(): Map<string, WavenerdDeckParamEntry> {
+    if ( this.hostDeck ) {
+      return this.hostDeck.params;
+    }
+
+    return this.__params;
+  }
 
   private __samples = new Map<string, WavenerdDeckSampleEntry>();
   private get samples(): Map<string, WavenerdDeckSampleEntry> {
@@ -264,8 +281,19 @@ export class WavenerdDeck {
       this.__programSwapTime =
         this.beatManager.time - this.beatManager.bar + this.beatManager.barSeconds;
     }
+  }
 
-    this.__audio.resume();
+  /**
+   * Set a uniform value.
+   */
+  public setParam( name: string, value: number, factor = 50.0 ): void {
+    const param = this.__params.get( name );
+    if ( param ) {
+      param.target = value;
+      param.factor = factor;
+    } else {
+      this.__params.set( name, { name, target: value, value, factor } );
+    }
   }
 
   /**
@@ -405,11 +433,28 @@ export class WavenerdDeck {
       beat,
       bar,
       sixteenBar,
+      deltaTime,
     } = this.beatManager;
     const { sampleRate } = this;
     const { gl } = this.__glCat;
 
     // render
+    this.params.forEach( ( param ) => {
+      if ( param.factor <= 0.0 ) {
+        param.value = param.target;
+      } else {
+        param.value = lerp( param.target, param.value, Math.exp( -param.factor * deltaTime ) );
+      }
+
+      program.program.uniform4f(
+        'param_' + param.name,
+        param.target,
+        param.value,
+        param.factor,
+        0.0
+      );
+    } );
+
     this.samples.forEach( ( sample ) => {
       program.program.uniformTexture( 'sample_' + sample.name, sample.texture );
       program.program.uniform4f(
