@@ -1,5 +1,5 @@
 import { BeatManager, BeatManagerUpdateEvent } from './BeatManager';
-import type { GLCat, GLCatBuffer, GLCatFramebuffer, GLCatProgram, GLCatRenderbuffer, GLCatTexture } from '@fms-cat/glcat-ts';
+import type { GLCat, GLCatBuffer, GLCatProgram, GLCatTexture, GLCatTransformFeedback } from '@fms-cat/glcat-ts';
 import { shaderchunkPost, shaderchunkPre, shaderchunkPreLines } from './shaderchunks';
 import { EventEmittable } from './utils/EventEmittable';
 import { applyMixins } from './utils/applyMixins';
@@ -17,12 +17,11 @@ interface WavenerdDeckSampleEntry {
   duration: number;
 }
 
-const vertQuad = `#version 300 es
-in vec2 p;
+export const shaderFrag = `#version 300 es
+
 void main() {
-  gl_Position = vec4( p, 0.0, 1.0 );
-}
-`;
+  discard;
+}`;
 
 export class WavenerdDeck {
   /**
@@ -136,12 +135,16 @@ export class WavenerdDeck {
     return this.__beatManager;
   }
 
-  private __bufferQuad: GLCatBuffer<WebGL2RenderingContext>;
-  private __renderbuffer: GLCatRenderbuffer<WebGL2RenderingContext>;
-  private __framebuffer: GLCatFramebuffer<WebGL2RenderingContext>;
+  private __bufferOff: GLCatBuffer<WebGL2RenderingContext>;
+  private __bufferTransformFeedbacks: [
+    GLCatBuffer<WebGL2RenderingContext>,
+    GLCatBuffer<WebGL2RenderingContext>
+  ];
+  private __transformFeedback: GLCatTransformFeedback<WebGL2RenderingContext>;
+  private __outputBuffers: [ Float32Array, Float32Array ];
+
   private __program: WavenerdDeckProgram | null = null;
   private __programCue: WavenerdDeckProgram | null = null;
-  private __pixelBuffer: Float32Array;
 
   private __samples = new Map<string, WavenerdDeckSampleEntry>();
   private get samples(): Map<string, WavenerdDeckSampleEntry> {
@@ -173,7 +176,7 @@ export class WavenerdDeck {
     timeErrorThreshold?: number;
   } ) {
     this.timeErrorThreshold = timeErrorThreshold ?? 0.01;
-    this.__bufferSize = bufferSize ?? 2048;
+    this.__bufferSize = bufferSize ?? 1024;
     this.__chunkSize = chunkSize ?? 64;
 
     // -- host deck --------------------------------------------------------------------------------
@@ -193,22 +196,35 @@ export class WavenerdDeck {
     this.__glCat = glCat;
     const { gl } = glCat;
 
-    glCat.getExtension( 'EXT_color_buffer_float' );
+    const bufferOffArray = new Array( this.__bufferSize * this.__chunkSize )
+      .fill( 0 )
+      .map( ( _, i ) => i );
+    this.__bufferOff = glCat.createBuffer();
+    this.__bufferOff.setVertexbuffer( new Float32Array( bufferOffArray ) );
 
-    this.__bufferQuad = glCat.createBuffer()!;
-    this.__bufferQuad.setVertexbuffer( new Float32Array( [ -1, -1, 1, -1, -1, 1, 1, 1 ] ) );
-    this.__renderbuffer = glCat.createRenderbuffer()!;
-    this.__renderbuffer.renderbufferStorage(
-      this.__bufferSize / 2,
-      this.__chunkSize,
-      { format: gl.RGBA32F }
+    this.__bufferTransformFeedbacks = [
+      glCat.createBuffer(),
+      glCat.createBuffer(),
+    ];
+    this.__transformFeedback = glCat.createTransformFeedback();
+
+    this.__bufferTransformFeedbacks[ 0 ].setVertexbuffer(
+      this.__bufferSize * this.__chunkSize * Float32Array.BYTES_PER_ELEMENT,
+      gl.DYNAMIC_COPY
     );
-    this.__framebuffer = glCat.createFramebuffer()!;
-    this.__framebuffer.attachRenderbuffer(
-      this.__renderbuffer,
-      { attachment: gl.COLOR_ATTACHMENT0 }
+
+    this.__bufferTransformFeedbacks[ 1 ].setVertexbuffer(
+      this.__bufferSize * this.__chunkSize * Float32Array.BYTES_PER_ELEMENT,
+      gl.DYNAMIC_COPY
     );
-    this.__pixelBuffer = new Float32Array( this.__bufferSize * 2 * this.__chunkSize );
+
+    this.__transformFeedback.bindBuffer( 0, this.__bufferTransformFeedbacks[ 0 ] );
+    this.__transformFeedback.bindBuffer( 1, this.__bufferTransformFeedbacks[ 1 ] );
+
+    this.__outputBuffers = [
+      new Float32Array( this.__bufferSize * this.__chunkSize ),
+      new Float32Array( this.__bufferSize * this.__chunkSize ),
+    ];
 
     // -- audio ------------------------------------------------------------------------------------
     this.__audio = audio;
@@ -221,7 +237,9 @@ export class WavenerdDeck {
    */
   public dispose(): void {
     this.__setCueStatus( 'none' );
-    this.__bufferQuad.dispose();
+    this.__transformFeedback.dispose();
+    this.__bufferTransformFeedbacks[ 0 ].dispose();
+    this.__bufferTransformFeedbacks[ 1 ].dispose();
     if ( this.__program ) {
       this.__program.program.dispose( true );
     }
@@ -236,8 +254,11 @@ export class WavenerdDeck {
   public async compile( code: string ): Promise<void> {
     this.__setCueStatus( 'compiling' );
     const program = await this.__glCat.lazyProgramAsync(
-      vertQuad,
-      shaderchunkPre + code + shaderchunkPost
+      shaderchunkPre + code + shaderchunkPost,
+      shaderFrag,
+      {
+        transformFeedbackVaryings: [ 'outL', 'outR' ],
+      },
     ).catch( ( e ) => {
       const error = this.__processErrorMessage( e );
       this.__lastError = error;
@@ -276,61 +297,60 @@ export class WavenerdDeck {
   /**
    * Load a sample and store as a uniform texture.
    */
-  public async loadSample( name: string, buffer: ArrayBuffer ): Promise<void> {
-    this.__audio.decodeAudioData( buffer )
-    .then( ( audioBuffer ) => {
-      const { sampleRate, duration } = audioBuffer;
-      const frames = audioBuffer.length;
-      const width = 2048;
-      const lengthCeiled = Math.ceil( frames / 2048.0 );
-      const height = lengthCeiled;
+  public async loadSample( name: string, inputBuffer: ArrayBuffer ): Promise<void> {
+    const audioBuffer = await this.__audio.decodeAudioData( inputBuffer );
 
-      const buffer = new Float32Array( width * height * 4 );
-      const channels = audioBuffer.numberOfChannels;
+    const { sampleRate, duration } = audioBuffer;
+    const frames = audioBuffer.length;
+    const width = 2048;
+    const lengthCeiled = Math.ceil( frames / 2048.0 );
+    const height = lengthCeiled;
 
-      const dataL = audioBuffer.getChannelData( 0 );
-      const dataR = audioBuffer.getChannelData( channels === 1 ? 0 : 1 );
+    const buffer = new Float32Array( width * height * 4 );
+    const channels = audioBuffer.numberOfChannels;
 
-      for ( let i = 0; i < frames; i ++ ) {
-        buffer[ i * 4 + 0 ] = dataL[ i ];
-        buffer[ i * 4 + 1 ] = dataR[ i ];
+    const dataL = audioBuffer.getChannelData( 0 );
+    const dataR = audioBuffer.getChannelData( channels === 1 ? 0 : 1 );
+
+    for ( let i = 0; i < frames; i ++ ) {
+      buffer[ i * 4 + 0 ] = dataL[ i ];
+      buffer[ i * 4 + 1 ] = dataR[ i ];
+    }
+
+    const glCat = this.__glCat;
+    const { gl } = glCat;
+    const texture = this.__glCat.createTexture()!;
+    texture.setTextureFromArray(
+      width,
+      height,
+      buffer,
+      {
+        internalformat: gl.RGBA32F,
+        format: gl.RGBA,
+        type: gl.FLOAT,
       }
+    );
+    texture.textureFilter( gl.NEAREST );
 
-      const glCat = this.__glCat;
-      const { gl } = glCat;
-      const texture = this.__glCat.createTexture()!;
-      texture.setTextureFromArray(
-        width,
-        height,
-        buffer,
-        {
-          internalformat: gl.RGBA32F,
-          format: gl.RGBA,
-          type: gl.FLOAT,
-        }
-      );
-      texture.textureFilter( gl.NEAREST );
-
-      this.__samples.set(
+    this.__samples.set(
+      name,
+      {
         name,
-        {
-          name,
-          texture,
-          sampleRate,
-          duration
-        }
-      );
-
-      if ( this.__program && this.__program.code.search( 'sample_' + name ) ) {
-        this.__program.requiredSamples.add( name );
+        texture,
+        sampleRate,
+        duration
       }
+    );
 
-      if ( this.__programCue && this.__programCue.code.search( 'sample_' + name ) ) {
-        this.__programCue.requiredSamples.add( name );
-      }
+    if ( this.__program && this.__program.code.search( 'sample_' + name ) ) {
+      this.__program.requiredSamples.add( name );
+    }
 
-      this.__emit( 'loadSample', { name, duration, sampleRate } );
-    } );
+    if ( this.__programCue && this.__programCue.code.search( 'sample_' + name ) ) {
+      this.__programCue.requiredSamples.add( name );
+    }
+
+    this.__emit( 'loadSample', { name, duration, sampleRate } );
   }
 
   /**
@@ -362,22 +382,19 @@ export class WavenerdDeck {
     const outR = event.outputBuffer.getChannelData( 1 );
 
     // should I process the next program?
-    const { sampleRate, __bufferSize: bufferSize } = this;
+    const { sampleRate, __bufferSize: bufferSize, __chunkHead: chunkHead } = this;
     const beginNext = this.__cueStatus === 'applying'
       ? Math.min( bufferSize, Math.floor( ( barSeconds - bar ) * sampleRate ) )
       : bufferSize;
 
-    if ( this.__chunkHead === 0 ) {
+    if ( chunkHead === 0 ) {
       this.__prepareBuffer( beatManagerUpdateEvent );
     }
 
     // insert into its audio buffer
-    for ( let i = 0; i < beginNext; i ++ ) {
-      const chunkIndex = this.__chunkHead * this.__bufferSize * 2;
-
-      outL[ i ] = this.__pixelBuffer[ chunkIndex + i * 2 + 0 ];
-      outR[ i ] = this.__pixelBuffer[ chunkIndex + i * 2 + 1 ];
-    }
+    const chunkHeadIndex = chunkHead * this.bufferSize;
+    outL.set( this.__outputBuffers[ 0 ].slice( chunkHeadIndex, chunkHeadIndex + beginNext ), 0 );
+    outR.set( this.__outputBuffers[ 1 ].slice( chunkHeadIndex, chunkHeadIndex + beginNext ), 0 );
 
     // process the next program??
     if ( beginNext !== bufferSize ) {
@@ -399,10 +416,8 @@ export class WavenerdDeck {
       this.__chunkHead = 0;
 
       // insert into its audio buffer
-      for ( let i = beginNext; i < bufferSize; i ++ ) {
-        outL[ i ] = this.__pixelBuffer[ i * 2 + 0 ];
-        outR[ i ] = this.__pixelBuffer[ i * 2 + 1 ];
-      }
+      outL.set( this.__outputBuffers[ 0 ].slice( beginNext, bufferSize ), beginNext );
+      outR.set( this.__outputBuffers[ 1 ].slice( beginNext, bufferSize ), beginNext );
     }
 
     this.__chunkHead = ( this.__chunkHead + 1 ) % this.__chunkSize;
@@ -438,10 +453,10 @@ export class WavenerdDeck {
         );
       } );
 
-      this.__program.program.attribute( 'p', this.__bufferQuad, 2 );
+      this.__program.program.attribute( 'off', this.__bufferOff, 1 );
       this.__program.program.uniform1f( 'bpm', this.bpm );
       this.__program.program.uniform1f( '_deltaSample', 1.0 / sampleRate );
-      this.__program.program.uniform1f( '_deltaChunk', this.__bufferSize / sampleRate );
+      this.__program.program.uniform1f( '_deltaChunk', bufferSize / sampleRate );
       this.__program.program.uniform4f(
         'timeLength',
         beatSeconds,
@@ -458,28 +473,23 @@ export class WavenerdDeck {
       );
 
       this.__glCat.useProgram( this.__program.program, () => {
-        this.__glCat.bindFramebuffer( this.__framebuffer, () => {
-          gl.viewport( 0, 0, this.__bufferSize / 2, this.__chunkSize );
-          gl.blendFunc( this.__glCat.gl.ONE, this.__glCat.gl.ZERO );
-
-          gl.drawArrays( gl.TRIANGLE_STRIP, 0, 4 );
+        this.__glCat.bindTransformFeedback( this.__transformFeedback, () => {
+          gl.enable( gl.RASTERIZER_DISCARD );
+          gl.beginTransformFeedback( gl.POINTS );
+          gl.drawArrays( gl.POINTS, 0, bufferSize * chunkSize );
+          gl.endTransformFeedback();
+          gl.disable( gl.RASTERIZER_DISCARD );
         } );
       } );
 
-      // read pixels
       gl.flush();
 
-      this.__glCat.bindFramebuffer( this.__framebuffer, () => {
-        gl.readBuffer( this.__glCat.gl.COLOR_ATTACHMENT0 );
-        gl.readPixels(
-          0, // x
-          0, // y
-          bufferSize / 2, // width
-          chunkSize, // height
-          this.__glCat.gl.RGBA, // format
-          this.__glCat.gl.FLOAT, // type
-          this.__pixelBuffer // dst
-        );
+      this.__glCat.bindVertexBuffer( this.__bufferTransformFeedbacks[ 0 ], () => {
+        gl.getBufferSubData( gl.ARRAY_BUFFER, 0, this.__outputBuffers[ 0 ] );
+      } );
+
+      this.__glCat.bindVertexBuffer( this.__bufferTransformFeedbacks[ 1 ], () => {
+        gl.getBufferSubData( gl.ARRAY_BUFFER, 0, this.__outputBuffers[ 1 ] );
       } );
     }
   }
