@@ -213,7 +213,7 @@ export class WavenerdDeck {
     // -- audio ------------------------------------------------------------------------------------
     this.__audio = audio;
     this.__node = audio.createScriptProcessor( this.__bufferSize, 2, 2 );
-    this.__node.onaudioprocess = ( event ) => this.__handleProcess( event );
+    this.__node.addEventListener( 'audioprocess', ( event ) => this.__handleProcess( event ) );
   }
 
   /**
