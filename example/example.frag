@@ -10,6 +10,7 @@
 #define PI 3.14159265359
 #define TAU 6.28318530718
 
+uniform vec4 param_knob;
 uniform sampler2D sample_amen;
 uniform vec4 sample_amen_meta;
 uniform sampler2D sample_909oh;
@@ -43,6 +44,8 @@ vec2 rimshot( float t ) {
 vec2 mainAudio( vec4 time ) {
   vec2 dest = vec2( 0.0 );
 
+  float knob = paramFetch( param_knob );
+
   float tKick = time.x; // time.x = a beat
   float sidechain = smoothstep( 0.0, 1.0 beat, tKick );
   float aKick = kick( tKick );
@@ -60,7 +63,8 @@ vec2 mainAudio( vec4 time ) {
   dest += 0.2 * aRim;
 
   float amenTime = time.y / AMEN_BPM * BPM;
-  vec2 aAmen = clip( 4.0 * sampleSinc( sample_amen, sample_amen_meta, amenTime ) );
+  amenTime += 0.01 * knob * sin( exp( knob * 10.0 ) * time.y );
+  vec2 aAmen = clip( 8.0 * sampleSinc( sample_amen, sample_amen_meta, amenTime ) );
   dest += 0.2 * aAmen;
 
   return dest;

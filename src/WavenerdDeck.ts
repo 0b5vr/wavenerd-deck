@@ -1,13 +1,22 @@
-import { BeatManager, BeatManagerUpdateEvent } from './BeatManager';
-import type { GLCat, GLCatBuffer, GLCatFramebuffer, GLCatProgram, GLCatRenderbuffer, GLCatTexture } from '@fms-cat/glcat-ts';
+import type { GLCat, GLCatBuffer, GLCatProgram, GLCatTexture, GLCatTransformFeedback } from '@fms-cat/glcat-ts';
 import { shaderchunkPost, shaderchunkPre, shaderchunkPreLines } from './shaderchunks';
+import { BeatManager } from './BeatManager';
 import { EventEmittable } from './utils/EventEmittable';
+import { Pool } from './Pool';
 import { applyMixins } from './utils/applyMixins';
+import { lerp } from './utils/lerp';
 
 interface WavenerdDeckProgram {
   program: GLCatProgram<WebGL2RenderingContext>;
   code: string;
   requiredSamples: Set<string>;
+}
+
+interface WavenerdDeckParamEntry {
+  name: string;
+  value: number;
+  factor: number;
+  target: number;
 }
 
 interface WavenerdDeckSampleEntry {
@@ -17,19 +26,13 @@ interface WavenerdDeckSampleEntry {
   duration: number;
 }
 
-const vertQuad = `#version 300 es
-in vec2 p;
+export const shaderFrag = `#version 300 es
+
 void main() {
-  gl_Position = vec4( p, 0.0, 1.0 );
-}
-`;
+  discard;
+}`;
 
 export class WavenerdDeck {
-  /**
-   * Threshold of time error, in seconds.
-   */
-  public timeErrorThreshold: number;
-
   /**
    * Its host deck.
    * It's highly recommended to connect the node of the host deck into the node of this deck, to ensure the timing consistency.
@@ -48,22 +51,12 @@ export class WavenerdDeck {
   }
 
   /**
-   * Its buffer size.
+   * Its buffer length.
    */
-  private __bufferSize: number;
-  public get bufferSize(): number {
-    return this.__bufferSize;
+  private __bufferLength: number;
+  public get bufferLength(): number {
+    return this.__bufferLength;
   }
-
-  /**
-   * Its chunk size.
-   */
-  private __chunkSize: number;
-  public get chunkSize(): number {
-    return this.__chunkSize;
-  }
-
-  private __chunkHead = 0;
 
   /**
    * Its current bpm.
@@ -73,18 +66,6 @@ export class WavenerdDeck {
   }
   public set bpm( value: number ) {
     this.beatManager.bpm = value;
-  }
-
-  /**
-   * Its current time.
-   */
-  private __time = 0;
-  public get time(): number {
-    if ( this.hostDeck ) {
-      return this.hostDeck.time;
-    }
-
-    return this.__time;
   }
 
   /**
@@ -114,10 +95,14 @@ export class WavenerdDeck {
   /**
    * Its node of the AudioContext.
    */
-  private __node: ScriptProcessorNode;
-  public get node(): ScriptProcessorNode {
+  private __node: GainNode;
+  public get node(): GainNode {
     return this.__node;
   }
+
+  private __bufferPool: Pool<AudioBuffer>;
+
+  private __prevBufferSource: AudioBufferSourceNode | null = null;
 
   /**
    * Alias for the `audio.sampleRate` .
@@ -136,12 +121,21 @@ export class WavenerdDeck {
     return this.__beatManager;
   }
 
-  private __bufferQuad: GLCatBuffer<WebGL2RenderingContext>;
-  private __renderbuffer: GLCatRenderbuffer<WebGL2RenderingContext>;
-  private __framebuffer: GLCatFramebuffer<WebGL2RenderingContext>;
+  private __bufferOff: GLCatBuffer<WebGL2RenderingContext>;
+  private __bufferTransformFeedbacks: [
+    GLCatBuffer<WebGL2RenderingContext>,
+    GLCatBuffer<WebGL2RenderingContext>
+  ];
+  private __transformFeedback: GLCatTransformFeedback<WebGL2RenderingContext>;
+
   private __program: WavenerdDeckProgram | null = null;
   private __programCue: WavenerdDeckProgram | null = null;
-  private __pixelBuffer: Float32Array;
+  private __programSwapTime: number = 0.0;
+
+  private __params = new Map<string, WavenerdDeckParamEntry>();
+  private get params(): Map<string, WavenerdDeckParamEntry> {
+    return this.__params;
+  }
 
   private __samples = new Map<string, WavenerdDeckSampleEntry>();
   private get samples(): Map<string, WavenerdDeckSampleEntry> {
@@ -159,22 +153,16 @@ export class WavenerdDeck {
     glCat,
     audio,
     hostDeck,
-    bufferSize,
-    chunkSize,
+    bufferLength,
     bpm,
-    timeErrorThreshold
   }: {
     glCat: GLCat<WebGL2RenderingContext>;
     audio: AudioContext;
     hostDeck?: WavenerdDeck;
-    bufferSize?: number;
-    chunkSize?: number;
+    bufferLength?: number;
     bpm?: number;
-    timeErrorThreshold?: number;
   } ) {
-    this.timeErrorThreshold = timeErrorThreshold ?? 0.01;
-    this.__bufferSize = bufferSize ?? 2048;
-    this.__chunkSize = chunkSize ?? 64;
+    this.__bufferLength = bufferLength ?? 4096;
 
     // -- host deck --------------------------------------------------------------------------------
     if ( hostDeck ) {
@@ -185,7 +173,6 @@ export class WavenerdDeck {
     this.__beatManager = new BeatManager();
     this.__beatManager.bpm = bpm ?? 140;
     this.__beatManager.on( 'changeBPM', ( { bpm } ) => {
-      this.__chunkHead = 0;
       this.__emit( 'changeBPM', { bpm } );
     } );
 
@@ -193,27 +180,39 @@ export class WavenerdDeck {
     this.__glCat = glCat;
     const { gl } = glCat;
 
-    glCat.getExtension( 'EXT_color_buffer_float' );
+    const bufferOffArray = new Array( this.__bufferLength )
+      .fill( 0 )
+      .map( ( _, i ) => i );
+    this.__bufferOff = glCat.createBuffer();
+    this.__bufferOff.setVertexbuffer( new Float32Array( bufferOffArray ) );
 
-    this.__bufferQuad = glCat.createBuffer()!;
-    this.__bufferQuad.setVertexbuffer( new Float32Array( [ -1, -1, 1, -1, -1, 1, 1, 1 ] ) );
-    this.__renderbuffer = glCat.createRenderbuffer()!;
-    this.__renderbuffer.renderbufferStorage(
-      this.__bufferSize / 2,
-      this.__chunkSize,
-      { format: gl.RGBA32F }
+    this.__bufferTransformFeedbacks = [
+      glCat.createBuffer(),
+      glCat.createBuffer(),
+    ];
+    this.__transformFeedback = glCat.createTransformFeedback();
+
+    this.__bufferTransformFeedbacks[ 0 ].setVertexbuffer(
+      this.__bufferLength * Float32Array.BYTES_PER_ELEMENT,
+      gl.DYNAMIC_COPY
     );
-    this.__framebuffer = glCat.createFramebuffer()!;
-    this.__framebuffer.attachRenderbuffer(
-      this.__renderbuffer,
-      { attachment: gl.COLOR_ATTACHMENT0 }
+
+    this.__bufferTransformFeedbacks[ 1 ].setVertexbuffer(
+      this.__bufferLength * Float32Array.BYTES_PER_ELEMENT,
+      gl.DYNAMIC_COPY
     );
-    this.__pixelBuffer = new Float32Array( this.__bufferSize * 2 * this.__chunkSize );
+
+    this.__transformFeedback.bindBuffer( 0, this.__bufferTransformFeedbacks[ 0 ] );
+    this.__transformFeedback.bindBuffer( 1, this.__bufferTransformFeedbacks[ 1 ] );
 
     // -- audio ------------------------------------------------------------------------------------
     this.__audio = audio;
-    this.__node = audio.createScriptProcessor( this.__bufferSize, 2, 2 );
-    this.__node.onaudioprocess = ( event ) => this.__handleProcess( event );
+    this.__node = audio.createGain();
+
+    this.__bufferPool = new Pool( [
+      audio.createBuffer( 2, this.__bufferLength, audio.sampleRate ),
+      audio.createBuffer( 2, this.__bufferLength, audio.sampleRate ),
+    ] );
   }
 
   /**
@@ -221,7 +220,9 @@ export class WavenerdDeck {
    */
   public dispose(): void {
     this.__setCueStatus( 'none' );
-    this.__bufferQuad.dispose();
+    this.__transformFeedback.dispose();
+    this.__bufferTransformFeedbacks[ 0 ].dispose();
+    this.__bufferTransformFeedbacks[ 1 ].dispose();
     if ( this.__program ) {
       this.__program.program.dispose( true );
     }
@@ -236,8 +237,11 @@ export class WavenerdDeck {
   public async compile( code: string ): Promise<void> {
     this.__setCueStatus( 'compiling' );
     const program = await this.__glCat.lazyProgramAsync(
-      vertQuad,
-      shaderchunkPre + code + shaderchunkPost
+      shaderchunkPre + code + shaderchunkPost,
+      shaderFrag,
+      {
+        transformFeedbackVaryings: [ 'outL', 'outR' ],
+      },
     ).catch( ( e ) => {
       const error = this.__processErrorMessage( e );
       this.__lastError = error;
@@ -270,67 +274,81 @@ export class WavenerdDeck {
   public applyCue(): void {
     if ( this.__cueStatus === 'ready' ) {
       this.__setCueStatus( 'applying' );
+      this.__programSwapTime =
+        this.beatManager.time - this.beatManager.bar + this.beatManager.barSeconds;
+    }
+  }
+
+  /**
+   * Set a uniform value.
+   */
+  public setParam( name: string, value: number, factor = 50.0 ): void {
+    const param = this.__params.get( name );
+    if ( param ) {
+      param.target = value;
+      param.factor = factor;
+    } else {
+      this.__params.set( name, { name, target: value, value, factor } );
     }
   }
 
   /**
    * Load a sample and store as a uniform texture.
    */
-  public async loadSample( name: string, buffer: ArrayBuffer ): Promise<void> {
-    this.__audio.decodeAudioData( buffer )
-    .then( ( audioBuffer ) => {
-      const { sampleRate, duration } = audioBuffer;
-      const frames = audioBuffer.length;
-      const width = 2048;
-      const lengthCeiled = Math.ceil( frames / 2048.0 );
-      const height = lengthCeiled;
+  public async loadSample( name: string, inputBuffer: ArrayBuffer ): Promise<void> {
+    const audioBuffer = await this.__audio.decodeAudioData( inputBuffer );
 
-      const buffer = new Float32Array( width * height * 4 );
-      const channels = audioBuffer.numberOfChannels;
+    const { sampleRate, duration } = audioBuffer;
+    const frames = audioBuffer.length;
+    const width = 2048;
+    const lengthCeiled = Math.ceil( frames / 2048.0 );
+    const height = lengthCeiled;
 
-      const dataL = audioBuffer.getChannelData( 0 );
-      const dataR = audioBuffer.getChannelData( channels === 1 ? 0 : 1 );
+    const buffer = new Float32Array( width * height * 4 );
+    const channels = audioBuffer.numberOfChannels;
 
-      for ( let i = 0; i < frames; i ++ ) {
-        buffer[ i * 4 + 0 ] = dataL[ i ];
-        buffer[ i * 4 + 1 ] = dataR[ i ];
+    const dataL = audioBuffer.getChannelData( 0 );
+    const dataR = audioBuffer.getChannelData( channels === 1 ? 0 : 1 );
+
+    for ( let i = 0; i < frames; i ++ ) {
+      buffer[ i * 4 + 0 ] = dataL[ i ];
+      buffer[ i * 4 + 1 ] = dataR[ i ];
+    }
+
+    const glCat = this.__glCat;
+    const { gl } = glCat;
+    const texture = this.__glCat.createTexture()!;
+    texture.setTextureFromArray(
+      width,
+      height,
+      buffer,
+      {
+        internalformat: gl.RGBA32F,
+        format: gl.RGBA,
+        type: gl.FLOAT,
       }
+    );
+    texture.textureFilter( gl.NEAREST );
 
-      const glCat = this.__glCat;
-      const { gl } = glCat;
-      const texture = this.__glCat.createTexture()!;
-      texture.setTextureFromArray(
-        width,
-        height,
-        buffer,
-        {
-          internalformat: gl.RGBA32F,
-          format: gl.RGBA,
-          type: gl.FLOAT,
-        }
-      );
-      texture.textureFilter( gl.NEAREST );
-
-      this.__samples.set(
+    this.__samples.set(
+      name,
+      {
         name,
-        {
-          name,
-          texture,
-          sampleRate,
-          duration
-        }
-      );
-
-      if ( this.__program && this.__program.code.search( 'sample_' + name ) ) {
-        this.__program.requiredSamples.add( name );
+        texture,
+        sampleRate,
+        duration
       }
+    );
 
-      if ( this.__programCue && this.__programCue.code.search( 'sample_' + name ) ) {
-        this.__programCue.requiredSamples.add( name );
-      }
+    if ( this.__program && this.__program.code.search( 'sample_' + name ) ) {
+      this.__program.requiredSamples.add( name );
+    }
 
-      this.__emit( 'loadSample', { name, duration, sampleRate } );
-    } );
+    if ( this.__programCue && this.__programCue.code.search( 'sample_' + name ) ) {
+      this.__programCue.requiredSamples.add( name );
+    }
+
+    this.__emit( 'loadSample', { name, duration, sampleRate } );
   }
 
   /**
@@ -343,145 +361,158 @@ export class WavenerdDeck {
     }
   }
 
-  private __handleProcess( event: AudioProcessingEvent ): void {
-    let time = this.time;
-    if ( !this.hostDeck ) {
-      time += this.__bufferSize / this.__audio.sampleRate;
-      if ( this.timeErrorThreshold < Math.abs( time - event.playbackTime ) ) {
-        time = event.playbackTime;
-      }
-    }
-    this.__time = time;
+  public update(): void {
+    const { sampleRate, __bufferLength: bufferLength, __audio: audio } = this;
 
-    const beatManagerUpdateEvent = this.beatManager.update( time );
-
-    const { bpm, bar } = beatManagerUpdateEvent;
-    const barSeconds = BeatManager.CalcBarSeconds( bpm );
-
-    const outL = event.outputBuffer.getChannelData( 0 );
-    const outR = event.outputBuffer.getChannelData( 1 );
+    const genTime = audio.currentTime;
+    this.beatManager.update( genTime );
 
     // should I process the next program?
-    const { sampleRate, __bufferSize: bufferSize } = this;
-    const beginNext = this.__cueStatus === 'applying'
-      ? Math.min( bufferSize, Math.floor( ( barSeconds - bar ) * sampleRate ) )
-      : bufferSize;
+    let beginNext = this.__cueStatus === 'applying'
+      ? Math.floor( ( this.__programSwapTime - genTime ) * sampleRate )
+      : Infinity;
+    beginNext = Math.min( beginNext, bufferLength );
 
-    if ( this.__chunkHead === 0 ) {
-      this.__prepareBuffer( beatManagerUpdateEvent );
+    if ( beginNext < 0 ) {
+      this.__setCueStatus( 'none' );
+
+      const prevProgram = this.__program;
+      this.__program = this.__programCue;
+
+      if ( prevProgram ) {
+        prevProgram.program.dispose( true );
+      }
+      this.__programCue = null;
+
+      beginNext = bufferLength;
     }
 
-    // insert into its audio buffer
-    for ( let i = 0; i < beginNext; i ++ ) {
-      const chunkIndex = this.__chunkHead * this.__bufferSize * 2;
+    const buffer = this.__bufferPool.next();
 
-      outL[ i ] = this.__pixelBuffer[ chunkIndex + i * 2 + 0 ];
-      outR[ i ] = this.__pixelBuffer[ chunkIndex + i * 2 + 1 ];
+    if ( this.__program ) {
+      this.__prepareBuffer( this.__program, buffer, 0, beginNext );
     }
 
     // process the next program??
-    if ( beginNext !== bufferSize ) {
-      this.__setCueStatus( 'none' );
-
+    if ( beginNext < bufferLength ) {
+      // render
       if ( this.__programCue ) {
-        const prevProgram = this.__program;
-        this.__program = this.__programCue;
-
-        if ( prevProgram ) {
-          prevProgram.program.dispose( true );
-        }
-        this.__programCue = null;
-
-        // render
-        this.__prepareBuffer( beatManagerUpdateEvent );
-      }
-
-      this.__chunkHead = 0;
-
-      // insert into its audio buffer
-      for ( let i = beginNext; i < bufferSize; i ++ ) {
-        outL[ i ] = this.__pixelBuffer[ i * 2 + 0 ];
-        outR[ i ] = this.__pixelBuffer[ i * 2 + 1 ];
+        this.__prepareBuffer( this.__programCue, buffer, beginNext, bufferLength - beginNext );
       }
     }
 
-    this.__chunkHead = ( this.__chunkHead + 1 ) % this.__chunkSize;
+    const bufferSource = audio.createBufferSource();
+    bufferSource.buffer = buffer;
+    bufferSource.connect( this.__node );
+
+    const delay = audio.currentTime - genTime;
+    this.__prevBufferSource?.stop( audio.currentTime );
+    bufferSource.start( audio.currentTime, delay );
+
+    this.__prevBufferSource = bufferSource;
 
     // emit an event
-    this.__emit( 'process' );
+    this.__emit( 'update' );
   }
 
-  private __prepareBuffer( event: BeatManagerUpdateEvent ): void {
+  private __prepareBuffer(
+    program: WavenerdDeckProgram,
+    buffer: AudioBuffer,
+    first: number,
+    count: number
+  ): void {
     const {
       time,
+      beatSeconds,
+      barSeconds,
+      sixteenBarSeconds,
       beat,
       bar,
       sixteenBar,
-      bpm
-    } = event;
-    const beatSeconds = BeatManager.CalcBeatSeconds( bpm );
-    const barSeconds = BeatManager.CalcBarSeconds( bpm );
-    const sixteenBarSeconds = BeatManager.CalcSixteenBarSeconds( bpm );
-    const { sampleRate, __bufferSize: bufferSize, __chunkSize: chunkSize } = this;
+      deltaTime,
+    } = this.beatManager;
+    const { sampleRate } = this;
     const { gl } = this.__glCat;
 
     // render
-    if ( this.__program ) {
-      this.samples.forEach( ( sample ) => {
-        this.__program!.program.uniformTexture( 'sample_' + sample.name, sample.texture );
-        this.__program!.program.uniform4f(
-          'sample_' + sample.name + '_meta',
-          sample.texture.width,
-          sample.texture.height,
-          sample.sampleRate,
-          sample.duration
-        );
-      } );
+    this.params.forEach( ( param ) => {
+      if ( param.factor <= 0.0 ) {
+        param.value = param.target;
+      } else {
+        param.value = lerp( param.target, param.value, Math.exp( -param.factor * deltaTime ) );
+      }
 
-      this.__program.program.attribute( 'p', this.__bufferQuad, 2 );
-      this.__program.program.uniform1f( 'bpm', this.bpm );
-      this.__program.program.uniform1f( '_deltaSample', 1.0 / sampleRate );
-      this.__program.program.uniform1f( '_deltaChunk', this.__bufferSize / sampleRate );
-      this.__program.program.uniform4f(
-        'timeLength',
-        beatSeconds,
-        barSeconds,
-        sixteenBarSeconds,
-        1E16
+      program.program.uniform4f(
+        'param_' + param.name,
+        param.target,
+        param.value,
+        param.factor,
+        0.0
       );
-      this.__program.program.uniform4f(
-        '_timeHead',
-        beat,
-        bar,
-        sixteenBar,
-        time
+    } );
+
+    this.samples.forEach( ( sample ) => {
+      program.program.uniformTexture( 'sample_' + sample.name, sample.texture );
+      program.program.uniform4f(
+        'sample_' + sample.name + '_meta',
+        sample.texture.width,
+        sample.texture.height,
+        sample.sampleRate,
+        sample.duration
       );
+    } );
 
-      this.__glCat.useProgram( this.__program.program, () => {
-        this.__glCat.bindFramebuffer( this.__framebuffer, () => {
-          gl.viewport( 0, 0, this.__bufferSize / 2, this.__chunkSize );
-          gl.blendFunc( this.__glCat.gl.ONE, this.__glCat.gl.ZERO );
+    program.program.attribute( 'off', this.__bufferOff, 1 );
+    program.program.uniform1f( 'bpm', this.bpm );
+    program.program.uniform1f( '_deltaSample', 1.0 / sampleRate );
+    program.program.uniform4f(
+      'timeLength',
+      beatSeconds,
+      barSeconds,
+      sixteenBarSeconds,
+      1E16
+    );
+    program.program.uniform4f(
+      '_timeHead',
+      beat,
+      bar,
+      sixteenBar,
+      time
+    );
 
-          gl.drawArrays( gl.TRIANGLE_STRIP, 0, 4 );
-        } );
+    this.__glCat.useProgram( program.program, () => {
+      this.__glCat.bindTransformFeedback( this.__transformFeedback, () => {
+        gl.enable( gl.RASTERIZER_DISCARD );
+        gl.beginTransformFeedback( gl.POINTS );
+        gl.drawArrays( gl.POINTS, first, count );
+        gl.endTransformFeedback();
+        gl.disable( gl.RASTERIZER_DISCARD );
       } );
+    } );
 
-      // read pixels
-      gl.flush();
+    gl.flush();
 
-      this.__glCat.bindFramebuffer( this.__framebuffer, () => {
-        gl.readBuffer( this.__glCat.gl.COLOR_ATTACHMENT0 );
-        gl.readPixels(
-          0, // x
-          0, // y
-          bufferSize / 2, // width
-          chunkSize, // height
-          this.__glCat.gl.RGBA, // format
-          this.__glCat.gl.FLOAT, // type
-          this.__pixelBuffer // dst
-        );
-      } );
-    }
+    const outL = buffer.getChannelData( 0 );
+    this.__glCat.bindVertexBuffer( this.__bufferTransformFeedbacks[ 0 ], () => {
+      gl.getBufferSubData(
+        gl.ARRAY_BUFFER,
+        0,
+        outL,
+        first,
+        count
+      );
+    } );
+
+    const outR = buffer.getChannelData( 1 );
+    this.__glCat.bindVertexBuffer( this.__bufferTransformFeedbacks[ 1 ], () => {
+      gl.getBufferSubData(
+        gl.ARRAY_BUFFER,
+        0,
+        outR,
+        first,
+        count
+      );
+    } );
   }
 
   private __setCueStatus( cueStatus: 'none' | 'compiling' | 'ready' | 'applying' ): void {
@@ -501,7 +532,7 @@ export class WavenerdDeck {
 }
 
 export interface WavenerdDeck extends EventEmittable<{
-  process: void;
+  update: void;
   changeCueStatus: { cueStatus: 'none' | 'compiling' | 'ready' | 'applying' };
   loadSample: { name: string; sampleRate: number; duration: number }
   deleteSample: { name: string };

@@ -26,7 +26,6 @@ module.exports = {
         // basics
         "indent": [ "error", 2, { // indentation should be 2 spaces
             "flatTernaryExpressions": true, // ternary should be performed in flat
-            "MemberExpression": 0 // member chain should be performed in flat
         } ], // it forces 2 spaces indentation
         "linebreak-style": [ "error", "unix" ], // fuck you, CRLF
         "quotes": [ "error", "single" ], // quotes must be single

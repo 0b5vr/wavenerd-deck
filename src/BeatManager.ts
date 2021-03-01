@@ -12,20 +12,6 @@ export interface BeatManagerUpdateEvent {
 }
 
 export class BeatManager {
-  public __bpm: number = 140.0;
-  public get bpm(): number {
-    return this.__bpm;
-  }
-  public set bpm( value: number ) {
-    const prevBpm = this.__bpm;
-    this.__bpm = Math.max( 0.0, value );
-    this.__sixteenBar = this.__sixteenBar * prevBpm / this.__bpm;
-    this.__emit( 'changeBPM', { bpm: this.__bpm } );
-  }
-
-  private __time = 0.0;
-  private __sixteenBar = 0.0;
-
   public static CalcBeatSeconds( bpm: number ): number {
     return 60.0 / bpm;
   }
@@ -40,6 +26,54 @@ export class BeatManager {
     return 3840.0 / bpm;
   }
 
+  public __bpm: number = 140.0;
+  public get bpm(): number {
+    return this.__bpm;
+  }
+  public set bpm( value: number ) {
+    const prevBpm = this.__bpm;
+    this.__bpm = Math.max( 0.0, value );
+    this.__sixteenBar = this.__sixteenBar * prevBpm / this.__bpm;
+    this.__emit( 'changeBPM', { bpm: this.__bpm } );
+  }
+
+  public get beatSeconds(): number {
+    return BeatManager.CalcBeatSeconds( this.__bpm );
+  }
+
+  public get barSeconds(): number {
+    return BeatManager.CalcBarSeconds( this.__bpm );
+  }
+
+  public get sixteenBarSeconds(): number {
+    return BeatManager.CalcSixteenBarSeconds( this.__bpm );
+  }
+
+  private __time = 0.0;
+  public get time(): number {
+    return this.__time;
+  }
+
+  private __deltaTime = 0.0;
+  public get deltaTime(): number {
+    return this.__deltaTime;
+  }
+
+  private __beat = 0.0;
+  public get beat(): number {
+    return this.__beat;
+  }
+
+  private __bar = 0.0;
+  public get bar(): number {
+    return this.__bar;
+  }
+
+  private __sixteenBar = 0.0;
+  public get sixteenBar(): number {
+    return this.__sixteenBar;
+  }
+
   public reset(): void {
     this.__time = 0.0;
     this.__sixteenBar = 0.0;
@@ -50,23 +84,21 @@ export class BeatManager {
     const barSeconds = BeatManager.CalcBarSeconds( this.__bpm );
     const sixteenBarSeconds = BeatManager.CalcSixteenBarSeconds( this.__bpm );
 
-    const deltaTime = time - this.__time;
+    this.__deltaTime = time - this.__time;
 
-    this.__sixteenBar = mod( this.__sixteenBar + deltaTime, sixteenBarSeconds );
-
-    const sixteenBar = this.__sixteenBar;
-    const bar = mod( sixteenBar, barSeconds );
-    const beat = mod( bar, beatSeconds );
+    this.__sixteenBar = mod( this.__sixteenBar + this.__deltaTime, sixteenBarSeconds );
+    this.__bar = mod( this.__sixteenBar, barSeconds );
+    this.__beat = mod( this.__bar, beatSeconds );
 
     this.__time = time;
 
     const event = {
       time,
-      deltaTime,
+      deltaTime: this.__deltaTime,
       bpm: this.__bpm,
-      beat,
-      bar,
-      sixteenBar
+      beat: this.__beat,
+      bar: this.__bar,
+      sixteenBar: this.__sixteenBar,
     };
 
     this.__emit( 'update', event );
