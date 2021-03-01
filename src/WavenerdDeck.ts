@@ -290,6 +290,8 @@ export class WavenerdDeck {
     } else {
       this.__params.set( name, { name, target: value, value, factor } );
     }
+
+    this.__emit( 'setParam', { name, value, factor } );
   }
 
   /**
@@ -534,7 +536,8 @@ export class WavenerdDeck {
 export interface WavenerdDeck extends EventEmittable<{
   update: void;
   changeCueStatus: { cueStatus: 'none' | 'compiling' | 'ready' | 'applying' };
-  loadSample: { name: string; sampleRate: number; duration: number }
+  loadSample: { name: string; sampleRate: number; duration: number };
+  setParam: { name: string; value: number; factor: number };
   deleteSample: { name: string };
   changeBPM: { bpm: number };
   error: { error: string | null };
