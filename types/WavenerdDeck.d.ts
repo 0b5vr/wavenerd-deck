@@ -1,11 +1,8 @@
-import { BeatManager } from './BeatManager';
 import type { GLCat } from '@fms-cat/glcat-ts';
+import { BeatManager } from './BeatManager';
 import { EventEmittable } from './utils/EventEmittable';
+export declare const shaderFrag = "#version 300 es\n\nvoid main() {\n  discard;\n}";
 export declare class WavenerdDeck {
-    /**
-     * Threshold of time error, in seconds.
-     */
-    timeErrorThreshold: number;
     /**
      * Its host deck.
      * It's highly recommended to connect the node of the host deck into the node of this deck, to ensure the timing consistency.
@@ -20,26 +17,15 @@ export declare class WavenerdDeck {
     private __cueStatus;
     get cueStatus(): 'none' | 'compiling' | 'ready' | 'applying';
     /**
-     * Its buffer size.
+     * Its buffer length.
      */
-    private __bufferSize;
-    get bufferSize(): number;
-    /**
-     * Its chunk size.
-     */
-    private __chunkSize;
-    get chunkSize(): number;
-    private __chunkHead;
+    private __bufferLength;
+    get bufferLength(): number;
     /**
      * Its current bpm.
      */
     get bpm(): number;
     set bpm(value: number);
-    /**
-     * Its current time.
-     */
-    private __time;
-    get time(): number;
     /**
      * Its bound `GLCat`.
      */
@@ -59,32 +45,34 @@ export declare class WavenerdDeck {
      * Its node of the AudioContext.
      */
     private __node;
-    get node(): ScriptProcessorNode;
+    get node(): GainNode;
+    private __bufferPool;
+    private __prevBufferSource;
     /**
      * Alias for the `audio.sampleRate` .
      */
     get sampleRate(): number;
     private __beatManager;
     get beatManager(): BeatManager;
-    private __bufferQuad;
-    private __renderbuffer;
-    private __framebuffer;
+    private __bufferOff;
+    private __bufferTransformFeedbacks;
+    private __transformFeedback;
     private __program;
     private __programCue;
-    private __pixelBuffer;
+    private __programSwapTime;
+    private __params;
+    private get params();
     private __samples;
     private get samples();
     /**
      * Constructor of the WavenerdDeck.
      */
-    constructor({ glCat, audio, hostDeck, bufferSize, chunkSize, bpm, timeErrorThreshold }: {
+    constructor({ glCat, audio, hostDeck, bufferLength, bpm, }: {
         glCat: GLCat<WebGL2RenderingContext>;
         audio: AudioContext;
         hostDeck?: WavenerdDeck;
-        bufferSize?: number;
-        chunkSize?: number;
+        bufferLength?: number;
         bpm?: number;
-        timeErrorThreshold?: number;
     });
     /**
      * Dispose this WavenerdDeck.
@@ -99,20 +87,24 @@ export declare class WavenerdDeck {
      */
     applyCue(): void;
     /**
+     * Set a uniform value.
+     */
+    setParam(name: string, value: number, factor?: number): void;
+    /**
      * Load a sample and store as a uniform texture.
      */
-    loadSample(name: string, buffer: ArrayBuffer): Promise<void>;
+    loadSample(name: string, inputBuffer: ArrayBuffer): Promise<void>;
     /**
      * Delete a sample.
      */
     deleteSample(name: string): void;
-    private __handleProcess;
+    update(): void;
     private __prepareBuffer;
     private __setCueStatus;
     private __processErrorMessage;
 }
 export interface WavenerdDeck extends EventEmittable<{
-    process: void;
+    update: void;
     changeCueStatus: {
         cueStatus: 'none' | 'compiling' | 'ready' | 'applying';
     };

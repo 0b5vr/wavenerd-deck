@@ -8,14 +8,25 @@ export interface BeatManagerUpdateEvent {
     sixteenBar: number;
 }
 export declare class BeatManager {
-    __bpm: number;
-    get bpm(): number;
-    set bpm(value: number);
-    private __time;
-    private __sixteenBar;
     static CalcBeatSeconds(bpm: number): number;
     static CalcBarSeconds(bpm: number): number;
     static CalcSixteenBarSeconds(bpm: number): number;
+    __bpm: number;
+    get bpm(): number;
+    set bpm(value: number);
+    get beatSeconds(): number;
+    get barSeconds(): number;
+    get sixteenBarSeconds(): number;
+    private __time;
+    get time(): number;
+    private __deltaTime;
+    get deltaTime(): number;
+    private __beat;
+    get beat(): number;
+    private __bar;
+    get bar(): number;
+    private __sixteenBar;
+    get sixteenBar(): number;
     reset(): void;
     update(time: number): BeatManagerUpdateEvent;
 }
