@@ -29,7 +29,8 @@
     "all": "yarn lint && yarn clean && yarn build",
     "clean": "rimraf dist types",
     "dev": "vite",
-    "build": "vite build",
+    "build": "yarn build-js && yarn build-types",
+    "build-js": "vite build",
     "build-types": "tsc --emitDeclarationOnly",
     "lint": "eslint src/**/*.ts"
   },

@@ -17,7 +17,7 @@ export default defineConfig( {
       entry: resolve( __dirname, 'src/index.ts' ),
       name: 'WAVENERD_DECK',
       fileName: ( format ) => `wavenerd-deck.${ format }.js`,
-    }
+    },
   },
   plugins: [
     banner( bannerStr )
