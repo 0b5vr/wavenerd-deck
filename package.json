@@ -2,7 +2,14 @@
   "name": "@fms-cat/wavenerd-deck",
   "description": "a",
   "version": "0.4.0",
-  "main": "dist/wavenerd-deck.min.js",
+  "main": "./dist/wavenerd-deck.umd.js",
+  "module": "./dist/wavenerd-deck.es.js",
+  "exports": {
+    ".": {
+      "import": "./dist/wavenerd-deck.es.js",
+      "require": "./dist/wavenerd-deck.umd.js"
+    }
+  },
   "types": "types/index.d.ts",
   "author": "FMS-Cat",
   "license": "MIT",
@@ -21,10 +28,8 @@
   "scripts": {
     "all": "yarn lint && yarn clean && yarn build",
     "clean": "rimraf dist types",
-    "dev": "webpack-dev-server --mode development",
-    "build": "yarn build-dev && yarn build-prod && yarn build-types",
-    "build-dev": "webpack --mode development",
-    "build-prod": "webpack --mode production",
+    "dev": "vite",
+    "build": "vite build",
     "build-types": "tsc --emitDeclarationOnly",
     "lint": "eslint src/**/*.ts"
   },
@@ -40,6 +45,8 @@
     "ts-loader": "^7.0.4",
     "ts-node": "^8.10.1",
     "typescript": "^3.9.2",
+    "vite": "^2.9.5",
+    "vite-plugin-banner": "^0.2.0",
     "webpack": "^4.43.0",
     "webpack-cli": "^3.3.11",
     "webpack-dev-server": "^3.11.0"
