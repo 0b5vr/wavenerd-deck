@@ -1,10 +1,12 @@
 import type { GLCat, GLCatBuffer, GLCatProgram, GLCatTexture, GLCatTransformFeedback } from '@fms-cat/glcat-ts';
 import { shaderchunkPost, shaderchunkPre, shaderchunkPreLines } from './shaderchunks';
 import { BeatManager } from './BeatManager';
+import { BufferReaderNode } from './BufferReaderNode';
 import { EventEmittable } from './utils/EventEmittable';
-import { Pool } from './Pool';
 import { applyMixins } from './utils/applyMixins';
 import { lerp } from './utils/lerp';
+
+const BLOCK_SIZE = 128;
 
 interface WavenerdDeckProgram {
   program: GLCatProgram<WebGL2RenderingContext>;
@@ -40,6 +42,13 @@ export class WavenerdDeck {
   public hostDeck?: WavenerdDeck;
 
   /**
+   * The count of latency blocks.
+   * Block == 128 samples.
+   * Lower == less latency.
+   */
+  public latencyBlocks: number;
+
+  /**
    * Its current cue status.
    * `'none'`: There is nothing in its current cue.
    * `'ready'`: There is a cue shader and is ready to be applied.
@@ -51,11 +60,18 @@ export class WavenerdDeck {
   }
 
   /**
-   * Its buffer length.
+   * Blocks per a render.
    */
-  private __bufferLength: number;
-  public get bufferLength(): number {
-    return this.__bufferLength;
+  private __blocksPerRender: number;
+  public get blocksPerRender(): number {
+    return this.__blocksPerRender;
+  }
+
+  /**
+   * Frames per a render
+   */
+  public get framesPerRender(): number {
+    return BLOCK_SIZE * this.__blocksPerRender;
   }
 
   /**
@@ -100,9 +116,8 @@ export class WavenerdDeck {
     return this.__node;
   }
 
-  private __bufferPool: Pool<AudioBuffer>;
-
-  private __prevBufferSource: AudioBufferSourceNode | null = null;
+  private __bufferReaderNode?: BufferReaderNode;
+  private __bufferWriteBlocks: number;
 
   /**
    * Alias for the `audio.sampleRate` .
@@ -127,6 +142,8 @@ export class WavenerdDeck {
     GLCatBuffer<WebGL2RenderingContext>
   ];
   private __transformFeedback: GLCatTransformFeedback<WebGL2RenderingContext>;
+
+  private __bufferTFDestination: Float32Array;
 
   private __program: WavenerdDeckProgram | null = null;
   private __programCue: WavenerdDeckProgram | null = null;
@@ -153,16 +170,19 @@ export class WavenerdDeck {
     glCat,
     audio,
     hostDeck,
-    bufferLength,
+    latencyBlocks,
+    blocksPerRender,
     bpm,
   }: {
     glCat: GLCat<WebGL2RenderingContext>;
     audio: AudioContext;
     hostDeck?: WavenerdDeck;
-    bufferLength?: number;
+    latencyBlocks?: number;
+    blocksPerRender?: number;
     bpm?: number;
   } ) {
-    this.__bufferLength = bufferLength ?? 4096;
+    this.latencyBlocks = latencyBlocks ?? 16;
+    this.__blocksPerRender = blocksPerRender ?? 16;
 
     // -- host deck --------------------------------------------------------------------------------
     if ( hostDeck ) {
@@ -180,7 +200,7 @@ export class WavenerdDeck {
     this.__glCat = glCat;
     const { gl } = glCat;
 
-    const bufferOffArray = new Array( this.__bufferLength )
+    const bufferOffArray = new Array( this.framesPerRender )
       .fill( 0 )
       .map( ( _, i ) => i );
     this.__bufferOff = glCat.createBuffer();
@@ -193,26 +213,30 @@ export class WavenerdDeck {
     this.__transformFeedback = glCat.createTransformFeedback();
 
     this.__bufferTransformFeedbacks[ 0 ].setVertexbuffer(
-      this.__bufferLength * Float32Array.BYTES_PER_ELEMENT,
+      this.framesPerRender * Float32Array.BYTES_PER_ELEMENT,
       gl.DYNAMIC_COPY
     );
 
     this.__bufferTransformFeedbacks[ 1 ].setVertexbuffer(
-      this.__bufferLength * Float32Array.BYTES_PER_ELEMENT,
+      this.framesPerRender * Float32Array.BYTES_PER_ELEMENT,
       gl.DYNAMIC_COPY
     );
 
     this.__transformFeedback.bindBuffer( 0, this.__bufferTransformFeedbacks[ 0 ] );
     this.__transformFeedback.bindBuffer( 1, this.__bufferTransformFeedbacks[ 1 ] );
 
+    this.__bufferTFDestination = new Float32Array( this.framesPerRender );
+
     // -- audio ------------------------------------------------------------------------------------
     this.__audio = audio;
     this.__node = audio.createGain();
 
-    this.__bufferPool = new Pool( [
-      audio.createBuffer( 2, this.__bufferLength, audio.sampleRate ),
-      audio.createBuffer( 2, this.__bufferLength, audio.sampleRate ),
-    ] );
+    BufferReaderNode.addModule( audio ).then( () => {
+      this.__bufferReaderNode = new BufferReaderNode( audio );
+      this.__bufferReaderNode.connect( this.__node );
+    } );
+
+    this.__bufferWriteBlocks = 0;
   }
 
   /**
@@ -220,6 +244,7 @@ export class WavenerdDeck {
    */
   public dispose(): void {
     this.__setCueStatus( 'none' );
+
     this.__transformFeedback.dispose();
     this.__bufferTransformFeedbacks[ 0 ].dispose();
     this.__bufferTransformFeedbacks[ 1 ].dispose();
@@ -229,6 +254,8 @@ export class WavenerdDeck {
     if ( this.__programCue ) {
       this.__programCue.program.dispose( true );
     }
+
+    this.__bufferReaderNode?.disconnect();
   }
 
   /**
@@ -364,16 +391,34 @@ export class WavenerdDeck {
   }
 
   public update(): void {
-    const { sampleRate, __bufferLength: bufferLength, __audio: audio } = this;
+    const bufferReaderNode = this.__bufferReaderNode;
+    if ( bufferReaderNode == null ) { return; }
 
-    const genTime = audio.currentTime;
+    const { readBlocks } = bufferReaderNode;
+    const { sampleRate, blocksPerRender, framesPerRender } = this;
+
+    const blockAhead = this.__bufferWriteBlocks - readBlocks;
+
+    // we don't have to render this time
+    if ( blockAhead > this.latencyBlocks ) {
+      return;
+    }
+
+    // we're very behind
+    if ( blockAhead < 0 ) {
+      this.__bufferWriteBlocks = (
+        Math.floor( readBlocks / blocksPerRender ) + 1
+      ) * blocksPerRender;
+    }
+
+    const genTime = BLOCK_SIZE * this.__bufferWriteBlocks / sampleRate;
     this.beatManager.update( genTime );
 
     // should I process the next program?
     let beginNext = this.__cueStatus === 'applying'
       ? Math.floor( ( this.__programSwapTime - genTime ) * sampleRate )
       : Infinity;
-    beginNext = Math.min( beginNext, bufferLength );
+    beginNext = Math.min( beginNext, framesPerRender );
 
     if ( beginNext < 0 ) {
       this.__setCueStatus( 'none' );
@@ -386,32 +431,22 @@ export class WavenerdDeck {
       }
       this.__programCue = null;
 
-      beginNext = bufferLength;
+      beginNext = framesPerRender;
     }
 
-    const buffer = this.__bufferPool.next();
-
     if ( this.__program ) {
-      this.__prepareBuffer( this.__program, buffer, 0, beginNext );
+      this.__prepareBuffer( this.__program, 0, beginNext );
     }
 
     // process the next program??
-    if ( beginNext < bufferLength ) {
+    if ( beginNext < framesPerRender ) {
       // render
       if ( this.__programCue ) {
-        this.__prepareBuffer( this.__programCue, buffer, beginNext, bufferLength - beginNext );
+        this.__prepareBuffer( this.__programCue, beginNext, framesPerRender - beginNext );
       }
     }
 
-    const bufferSource = audio.createBufferSource();
-    bufferSource.buffer = buffer;
-    bufferSource.connect( this.__node );
-
-    const delay = audio.currentTime - genTime;
-    this.__prevBufferSource?.stop( audio.currentTime );
-    bufferSource.start( audio.currentTime, delay );
-
-    this.__prevBufferSource = bufferSource;
+    this.__bufferWriteBlocks += this.blocksPerRender;
 
     // emit an event
     this.__emit( 'update' );
@@ -419,10 +454,12 @@ export class WavenerdDeck {
 
   private __prepareBuffer(
     program: WavenerdDeckProgram,
-    buffer: AudioBuffer,
     first: number,
     count: number
   ): void {
+    const bufferReaderNode = this.__bufferReaderNode;
+    if ( bufferReaderNode == null ) { return; }
+
     const {
       time,
       beatSeconds,
@@ -498,25 +535,37 @@ export class WavenerdDeck {
 
     gl.flush();
 
-    const outL = buffer.getChannelData( 0 );
     this.__glCat.bindVertexBuffer( this.__bufferTransformFeedbacks[ 0 ], () => {
       gl.getBufferSubData(
         gl.ARRAY_BUFFER,
         0,
-        outL,
+        this.__bufferTFDestination,
         first,
-        count
+        count,
+      );
+
+      bufferReaderNode.write(
+        0,
+        this.__bufferWriteBlocks,
+        first,
+        this.__bufferTFDestination.subarray( first, first + count ),
       );
     } );
 
-    const outR = buffer.getChannelData( 1 );
     this.__glCat.bindVertexBuffer( this.__bufferTransformFeedbacks[ 1 ], () => {
       gl.getBufferSubData(
         gl.ARRAY_BUFFER,
         0,
-        outR,
+        this.__bufferTFDestination,
         first,
         count
+      );
+
+      bufferReaderNode.write(
+        1,
+        this.__bufferWriteBlocks,
+        first,
+        this.__bufferTFDestination.subarray( first, first + count ),
       );
     } );
   }

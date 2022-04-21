@@ -45,11 +45,7 @@
   wavenerdDeck.compile( frag );
 
   // == update wavenerd ============================================================================
-  function update() {
-    requestAnimationFrame( update );
-    wavenerdDeck.update();
-  }
-  update();
+  setInterval( () => wavenerdDeck.update(), 10 );
 
   // == wavenerd deck event listeners ==============================================================
   wavenerdDeck.on( 'changeCueStatus', ( { cueStatus } ) => {
