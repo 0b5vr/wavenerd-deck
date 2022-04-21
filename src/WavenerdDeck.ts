@@ -283,12 +283,12 @@ export class WavenerdDeck {
    * Set a uniform value.
    */
   public setParam( name: string, value: number, factor = 50.0 ): void {
-    const param = this.__params.get( name );
+    const param = this.params.get( name );
     if ( param ) {
       param.target = value;
       param.factor = factor;
     } else {
-      this.__params.set( name, { name, target: value, value, factor } );
+      this.params.set( name, { name, target: value, value, factor } );
     }
 
     this.__emit( 'setParam', { name, value, factor } );
@@ -332,7 +332,7 @@ export class WavenerdDeck {
     );
     texture.textureFilter( gl.NEAREST );
 
-    this.__samples.set(
+    this.samples.set(
       name,
       {
         name,
@@ -357,8 +357,8 @@ export class WavenerdDeck {
    * Delete a sample.
    */
   public deleteSample( name: string ): void {
-    if ( this.__samples.has( name ) ) {
-      this.__samples.delete( name );
+    if ( this.samples.has( name ) ) {
+      this.samples.delete( name );
       this.__emit( 'deleteSample', { name } );
     }
   }
