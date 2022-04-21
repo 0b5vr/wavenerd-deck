@@ -444,8 +444,9 @@ export class WavenerdDeck {
         param.value = lerp( param.target, param.value, Math.exp( -param.factor * deltaTime ) );
       }
 
-      program.program.uniform4f(
+      program.program.uniform(
         'param_' + param.name,
+        '4f',
         param.target,
         param.value,
         param.factor,
@@ -455,8 +456,9 @@ export class WavenerdDeck {
 
     this.samples.forEach( ( sample ) => {
       program.program.uniformTexture( 'sample_' + sample.name, sample.texture );
-      program.program.uniform4f(
+      program.program.uniform(
         'sample_' + sample.name + '_meta',
+        '4f',
         sample.texture.width,
         sample.texture.height,
         sample.sampleRate,
@@ -465,17 +467,19 @@ export class WavenerdDeck {
     } );
 
     program.program.attribute( 'off', this.__bufferOff, 1 );
-    program.program.uniform1f( 'bpm', this.bpm );
-    program.program.uniform1f( '_deltaSample', 1.0 / sampleRate );
-    program.program.uniform4f(
+    program.program.uniform( 'bpm', '1f', this.bpm );
+    program.program.uniform( '_deltaSample', '1f', 1.0 / sampleRate );
+    program.program.uniform(
       'timeLength',
+      '4f',
       beatSeconds,
       barSeconds,
       sixteenBarSeconds,
       1E16
     );
-    program.program.uniform4f(
+    program.program.uniform(
       '_timeHead',
+      '4f',
       beat,
       bar,
       sixteenBar,
