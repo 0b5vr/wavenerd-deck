@@ -1,4 +1,4 @@
-import processorCode from './BufferReaderProcessor.js?raw';
+import processorCode from './BufferReaderProcessor.worklet.js';
 
 const BLOCK_SIZE = 128;
 const CHANNELS = 2;

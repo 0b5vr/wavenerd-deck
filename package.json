@@ -1,38 +1,52 @@
 {
-  "name": "@fms-cat/wavenerd-deck",
+  "name": "@0b5vr/wavenerd-deck",
   "description": "a",
   "version": "0.4.0",
-  "main": "./dist/wavenerd-deck.umd.js",
-  "module": "./dist/wavenerd-deck.es.js",
+  "main": "./dist/wavenerd-deck.cjs.js",
+  "module": "./dist/wavenerd-deck.esm.js",
   "exports": {
     ".": {
-      "import": "./dist/wavenerd-deck.es.js",
-      "require": "./dist/wavenerd-deck.umd.js"
+      "import": "./dist/wavenerd-deck.esm.js",
+      "require": "./dist/wavenerd-deck.cjs.js"
     }
   },
   "types": "types/index.d.ts",
-  "author": "FMS-Cat",
+  "typesVersions": {
+    "<3.9": {
+      "*": [
+        "ts3.4/*"
+      ]
+    }
+  },
+  "author": "0b5vr",
   "license": "MIT",
   "private": false,
   "repository": {
     "type": "git",
-    "url": "https://github.com/FMS-Cat/wavenerd-deck"
+    "url": "https://github.com/0b5vr/wavenerd-deck"
   },
   "files": [
     "/dist/",
+    "/ts*/",
     "/types/",
     "/LICENSE",
     "/package.json",
     "/README.md"
   ],
+  "sideEffects": false,
   "scripts": {
+    "version": "yarn all",
     "all": "yarn lint && yarn clean && yarn build",
-    "clean": "rimraf dist types",
-    "dev": "vite",
+    "clean": "rimraf dist/ docs/ ts*/ types/",
+    "dev": "cross-env SERVE=1 node bin/build.js",
+    "lint": "eslint src/**/*.ts",
+    "lint-fix": "eslint src/**/*.ts --fix",
     "build": "yarn build-js && yarn build-types",
-    "build-js": "vite build",
-    "build-types": "tsc --emitDeclarationOnly",
-    "lint": "eslint src/**/*.ts"
+    "build-js": "node bin/build.js",
+    "build-types": "yarn build-types-tsc && yarn build-types-downlevel",
+    "build-types-tsc": "tsc --declaration --declarationDir ./types --emitDeclarationOnly",
+    "build-types-downlevel": "downlevel-dts types ts3.4/types",
+    "docs": "typedoc --entryPoints ./src/index.ts --out docs"
   },
   "devDependencies": {
     "@0b5vr/glcat-ts": "^0.15.2",
@@ -40,14 +54,16 @@
     "@types/webpack-dev-server": "^3.10.1",
     "@typescript-eslint/eslint-plugin": "^2.33.0",
     "@typescript-eslint/parser": "^2.33.0",
+    "cross-env": "^7.0.3",
+    "downlevel-dts": "^0.9.0",
+    "esbuild": "^0.14.38",
     "eslint": "^6.8.0",
     "fork-ts-checker-webpack-plugin": "^4.1.3",
     "rimraf": "^3.0.2",
     "ts-loader": "^7.0.4",
     "ts-node": "^8.10.1",
+    "typedoc": "^0.22.15",
     "typescript": "^3.9.2",
-    "vite": "^2.9.5",
-    "vite-plugin-banner": "^0.2.0",
     "webpack": "^4.43.0",
     "webpack-cli": "^3.3.11",
     "webpack-dev-server": "^3.11.0"
