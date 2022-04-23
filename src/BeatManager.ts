@@ -4,7 +4,6 @@ import { mod } from './utils/mod';
 
 export interface BeatManagerUpdateEvent {
   time: number;
-  deltaTime: number;
   bpm: number;
   beat: number;
   bar: number;
@@ -54,11 +53,6 @@ export class BeatManager {
     return this.__time;
   }
 
-  private __deltaTime = 0.0;
-  public get deltaTime(): number {
-    return this.__deltaTime;
-  }
-
   private __beat = 0.0;
   public get beat(): number {
     return this.__beat;
@@ -84,9 +78,9 @@ export class BeatManager {
     const barSeconds = BeatManager.CalcBarSeconds( this.__bpm );
     const sixteenBarSeconds = BeatManager.CalcSixteenBarSeconds( this.__bpm );
 
-    this.__deltaTime = time - this.__time;
+    const delta = time - this.__time;
 
-    this.__sixteenBar = mod( this.__sixteenBar + this.__deltaTime, sixteenBarSeconds );
+    this.__sixteenBar = mod( this.__sixteenBar + delta, sixteenBarSeconds );
     this.__bar = mod( this.__sixteenBar, barSeconds );
     this.__beat = mod( this.__bar, beatSeconds );
 
@@ -94,7 +88,6 @@ export class BeatManager {
 
     const event = {
       time,
-      deltaTime: this.__deltaTime,
       bpm: this.__bpm,
       beat: this.__beat,
       bar: this.__bar,

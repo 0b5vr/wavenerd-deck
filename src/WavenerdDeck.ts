@@ -79,6 +79,12 @@ export class WavenerdDeck {
   }
 
   /**
+   * Its last updated time.
+   * Intended to be used for calculation of deltaTime inside (@link __prepareBuffer).
+   */
+  private __lastUpdatedTime: number;
+
+  /**
    * Its renderer.
    */
   private __renderer: Renderer;
@@ -177,6 +183,8 @@ export class WavenerdDeck {
     this.__beatManager.on( 'changeBPM', ( { bpm } ) => {
       this.__emit( 'changeBPM', { bpm } );
     } );
+
+    this.__lastUpdatedTime = 0.0;
 
     // -- renderer ---------------------------------------------------------------------------------
     this.__renderer = new Renderer( gl, this.blocksPerRender );
@@ -410,16 +418,18 @@ export class WavenerdDeck {
       beat,
       bar,
       sixteenBar,
-      deltaTime,
     } = this.beatManager;
     const { sampleRate } = this;
+
+    const delta = time - this.__lastUpdatedTime;
+    this.__lastUpdatedTime = time;
 
     // render
     this.params.forEach( ( param ) => {
       if ( param.factor <= 0.0 ) {
         param.value = param.target;
       } else {
-        param.value = lerp( param.target, param.value, Math.exp( -param.factor * deltaTime ) );
+        param.value = lerp( param.target, param.value, Math.exp( -param.factor * delta ) );
       }
 
       this.__renderer.uniform4f(
