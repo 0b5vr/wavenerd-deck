@@ -89,9 +89,9 @@ jobs:
       with:
         name: docs
         path: public/docs
-    - name: Copy Examples
+    - name: Copy Example
       run: |
-        cp -r examples public/examples
+        cp -r example public/example
     - name: Deploy to gh-pages
       uses: peaceiris/actions-gh-pages@v3
       with:
