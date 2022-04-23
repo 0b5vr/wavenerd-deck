@@ -1,7 +1,6 @@
 import { EventEmittable } from './utils/EventEmittable';
 export interface BeatManagerUpdateEvent {
     time: number;
-    deltaTime: number;
     bpm: number;
     beat: number;
     bar: number;
@@ -19,8 +18,6 @@ export declare class BeatManager {
     get sixteenBarSeconds(): number;
     private __time;
     get time(): number;
-    private __deltaTime;
-    get deltaTime(): number;
     private __beat;
     get beat(): number;
     private __bar;

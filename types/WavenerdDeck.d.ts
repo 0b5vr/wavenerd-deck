@@ -1,13 +1,17 @@
-import type { GLCat } from '@fms-cat/glcat-ts';
 import { BeatManager } from './BeatManager';
 import { EventEmittable } from './utils/EventEmittable';
-export declare const shaderFrag = "#version 300 es\n\nvoid main() {\n  discard;\n}";
 export declare class WavenerdDeck {
     /**
      * Its host deck.
      * It's highly recommended to connect the node of the host deck into the node of this deck, to ensure the timing consistency.
      */
     hostDeck?: WavenerdDeck;
+    /**
+     * The count of latency blocks.
+     * Block == 128 samples.
+     * Lower == less latency.
+     */
+    latencyBlocks: number;
     /**
      * Its current cue status.
      * `'none'`: There is nothing in its current cue.
@@ -17,20 +21,28 @@ export declare class WavenerdDeck {
     private __cueStatus;
     get cueStatus(): 'none' | 'compiling' | 'ready' | 'applying';
     /**
-     * Its buffer length.
+     * Blocks per a render.
      */
-    private __bufferLength;
-    get bufferLength(): number;
+    private __blocksPerRender;
+    get blocksPerRender(): number;
+    /**
+     * Frames per a render
+     */
+    get framesPerRender(): number;
     /**
      * Its current bpm.
      */
     get bpm(): number;
     set bpm(value: number);
     /**
-     * Its bound `GLCat`.
+     * Its last updated time.
+     * Intended to be used for calculation of deltaTime inside (@link __prepareBuffer).
      */
-    private __glCat;
-    get glCat(): GLCat<WebGL2RenderingContext>;
+    private __lastUpdatedTime;
+    /**
+     * Its renderer.
+     */
+    private __renderer;
     /**
      * Its last compile error happened in [[WavenerdDeck.compile]].
      */
@@ -46,17 +58,14 @@ export declare class WavenerdDeck {
      */
     private __node;
     get node(): GainNode;
-    private __bufferPool;
-    private __prevBufferSource;
+    private __bufferReaderNode?;
+    private __bufferWriteBlocks;
     /**
      * Alias for the `audio.sampleRate` .
      */
     get sampleRate(): number;
     private __beatManager;
     get beatManager(): BeatManager;
-    private __bufferOff;
-    private __bufferTransformFeedbacks;
-    private __transformFeedback;
     private __program;
     private __programCue;
     private __programSwapTime;
@@ -67,11 +76,12 @@ export declare class WavenerdDeck {
     /**
      * Constructor of the WavenerdDeck.
      */
-    constructor({ glCat, audio, hostDeck, bufferLength, bpm, }: {
-        glCat: GLCat<WebGL2RenderingContext>;
+    constructor({ gl, audio, hostDeck, latencyBlocks, blocksPerRender, bpm, }: {
+        gl: WebGL2RenderingContext;
         audio: AudioContext;
         hostDeck?: WavenerdDeck;
-        bufferLength?: number;
+        latencyBlocks?: number;
+        blocksPerRender?: number;
         bpm?: number;
     });
     /**
@@ -98,7 +108,7 @@ export declare class WavenerdDeck {
      * Delete a sample.
      */
     deleteSample(name: string): void;
-    update(): void;
+    update(): Promise<void>;
     private __prepareBuffer;
     private __setCueStatus;
     private __processErrorMessage;
@@ -112,6 +122,11 @@ export interface WavenerdDeck extends EventEmittable<{
         name: string;
         sampleRate: number;
         duration: number;
+    };
+    setParam: {
+        name: string;
+        value: number;
+        factor: number;
     };
     deleteSample: {
         name: string;
