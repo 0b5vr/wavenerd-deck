@@ -127,9 +127,9 @@ export class WavenerdDeck {
     return this.__beatManager;
   }
 
-  private __program: WavenerdDeckProgram | null = null;
-  private __programCue: WavenerdDeckProgram | null = null;
-  private __programSwapTime: number = 0.0;
+  private __program: WavenerdDeckProgram | null;
+  private __programCue: WavenerdDeckProgram | null;
+  private __programSwapTime: number;
 
   private __params = new Map<string, WavenerdDeckParamEntry>();
   private get params(): Map<string, WavenerdDeckParamEntry> {
@@ -180,6 +180,10 @@ export class WavenerdDeck {
 
     // -- renderer ---------------------------------------------------------------------------------
     this.__renderer = new Renderer( gl, this.blocksPerRender );
+
+    this.__program = null;
+    this.__programCue = null;
+    this.__programSwapTime = 0.0;
 
     // -- audio ------------------------------------------------------------------------------------
     this.__audio = audio;

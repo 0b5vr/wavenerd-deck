@@ -26,7 +26,7 @@ export class BeatManager {
     return 3840.0 / bpm;
   }
 
-  public __bpm: number = 140.0;
+  public __bpm = 140.0;
   public get bpm(): number {
     return this.__bpm;
   }
