@@ -11,17 +11,14 @@
 </body>
 
 <script src="../dist/wavenerd-deck.iife.js"></script>
-<script src="https://unpkg.com/@fms-cat/glcat-ts@0.14/dist/glcat.js"></script>
 <script>
 ( async() => {
   const canvas = document.createElement( 'canvas' );
   const gl = canvas.getContext( 'webgl2' );
-  const glCat = new GLCAT.GLCat( gl );
 
   const audio = new AudioContext();
 
-  console.log( WAVENERD_DECK );
-  const wavenerdDeck = new WAVENERD_DECK.WavenerdDeck( { glCat, audio } );
+  const wavenerdDeck = new WAVENERD_DECK.WavenerdDeck( { gl, audio } );
   wavenerdDeck.node.connect( audio.destination );
   wavenerdDeck.bpm = 190;
 
@@ -45,7 +42,11 @@
   wavenerdDeck.compile( frag );
 
   // == update wavenerd ============================================================================
-  setInterval( () => wavenerdDeck.update(), 10 );
+  function update() {
+    wavenerdDeck.update();
+    requestAnimationFrame( update );
+  }
+  requestAnimationFrame( update );
 
   // == wavenerd deck event listeners ==============================================================
   wavenerdDeck.on( 'changeCueStatus', ( { cueStatus } ) => {

@@ -1,15 +1,14 @@
-import type { GLCat, GLCatBuffer, GLCatProgram, GLCatTexture, GLCatTransformFeedback } from '@fms-cat/glcat-ts';
-import { shaderchunkPost, shaderchunkPre, shaderchunkPreLines } from './shaderchunks';
 import { BeatManager } from './BeatManager';
 import { BufferReaderNode } from './BufferReaderNode';
 import { EventEmittable } from './utils/EventEmittable';
+import { Renderer } from './Renderer';
 import { applyMixins } from './utils/applyMixins';
 import { lerp } from './utils/lerp';
+import { shaderchunkPreLines } from './shaderchunks';
 
 const BLOCK_SIZE = 128;
 
 interface WavenerdDeckProgram {
-  program: GLCatProgram<WebGL2RenderingContext>;
   code: string;
   requiredSamples: Set<string>;
 }
@@ -23,16 +22,11 @@ interface WavenerdDeckParamEntry {
 
 interface WavenerdDeckSampleEntry {
   name: string;
-  texture: GLCatTexture<WebGL2RenderingContext>;
+  width: number;
+  height: number;
   sampleRate: number;
   duration: number;
 }
-
-export const shaderFrag = `#version 300 es
-
-void main() {
-  discard;
-}`;
 
 export class WavenerdDeck {
   /**
@@ -85,12 +79,9 @@ export class WavenerdDeck {
   }
 
   /**
-   * Its bound `GLCat`.
+   * Its renderer.
    */
-  private __glCat: GLCat<WebGL2RenderingContext>;
-  public get glCat(): GLCat<WebGL2RenderingContext> {
-    return this.__glCat;
-  }
+  private __renderer: Renderer;
 
   /**
    * Its last compile error happened in [[WavenerdDeck.compile]].
@@ -136,15 +127,6 @@ export class WavenerdDeck {
     return this.__beatManager;
   }
 
-  private __bufferOff: GLCatBuffer<WebGL2RenderingContext>;
-  private __bufferTransformFeedbacks: [
-    GLCatBuffer<WebGL2RenderingContext>,
-    GLCatBuffer<WebGL2RenderingContext>
-  ];
-  private __transformFeedback: GLCatTransformFeedback<WebGL2RenderingContext>;
-
-  private __bufferTFDestination: Float32Array;
-
   private __program: WavenerdDeckProgram | null = null;
   private __programCue: WavenerdDeckProgram | null = null;
   private __programSwapTime: number = 0.0;
@@ -167,14 +149,14 @@ export class WavenerdDeck {
    * Constructor of the WavenerdDeck.
    */
   public constructor( {
-    glCat,
+    gl,
     audio,
     hostDeck,
     latencyBlocks,
     blocksPerRender,
     bpm,
   }: {
-    glCat: GLCat<WebGL2RenderingContext>;
+    gl: WebGL2RenderingContext;
     audio: AudioContext;
     hostDeck?: WavenerdDeck;
     latencyBlocks?: number;
@@ -196,36 +178,8 @@ export class WavenerdDeck {
       this.__emit( 'changeBPM', { bpm } );
     } );
 
-    // -- glCat ------------------------------------------------------------------------------------
-    this.__glCat = glCat;
-    const { gl } = glCat;
-
-    const bufferOffArray = new Array( this.framesPerRender )
-      .fill( 0 )
-      .map( ( _, i ) => i );
-    this.__bufferOff = glCat.createBuffer();
-    this.__bufferOff.setVertexbuffer( new Float32Array( bufferOffArray ) );
-
-    this.__bufferTransformFeedbacks = [
-      glCat.createBuffer(),
-      glCat.createBuffer(),
-    ];
-    this.__transformFeedback = glCat.createTransformFeedback();
-
-    this.__bufferTransformFeedbacks[ 0 ].setVertexbuffer(
-      this.framesPerRender * Float32Array.BYTES_PER_ELEMENT,
-      gl.DYNAMIC_COPY
-    );
-
-    this.__bufferTransformFeedbacks[ 1 ].setVertexbuffer(
-      this.framesPerRender * Float32Array.BYTES_PER_ELEMENT,
-      gl.DYNAMIC_COPY
-    );
-
-    this.__transformFeedback.bindBuffer( 0, this.__bufferTransformFeedbacks[ 0 ] );
-    this.__transformFeedback.bindBuffer( 1, this.__bufferTransformFeedbacks[ 1 ] );
-
-    this.__bufferTFDestination = new Float32Array( this.framesPerRender );
+    // -- renderer ---------------------------------------------------------------------------------
+    this.__renderer = new Renderer( gl, this.blocksPerRender );
 
     // -- audio ------------------------------------------------------------------------------------
     this.__audio = audio;
@@ -245,15 +199,7 @@ export class WavenerdDeck {
   public dispose(): void {
     this.__setCueStatus( 'none' );
 
-    this.__transformFeedback.dispose();
-    this.__bufferTransformFeedbacks[ 0 ].dispose();
-    this.__bufferTransformFeedbacks[ 1 ].dispose();
-    if ( this.__program ) {
-      this.__program.program.dispose( true );
-    }
-    if ( this.__programCue ) {
-      this.__programCue.program.dispose( true );
-    }
+    this.__renderer.dispose();
 
     this.__bufferReaderNode?.disconnect();
   }
@@ -263,18 +209,17 @@ export class WavenerdDeck {
    */
   public async compile( code: string ): Promise<void> {
     this.__setCueStatus( 'compiling' );
-    const program = await this.__glCat.lazyProgramAsync(
-      shaderchunkPre + code + shaderchunkPost,
-      shaderFrag,
-      {
-        transformFeedbackVaryings: [ 'outL', 'outR' ],
-      },
-    ).catch( ( e ) => {
+
+    await this.__renderer.compile( code ).catch( ( e ) => {
       const error = this.__processErrorMessage( e );
-      this.__lastError = error;
+
       this.__programCue = null;
+
       this.__setCueStatus( 'none' );
+
       this.__emit( 'error', { error } );
+      this.__lastError = error;
+
       throw new Error( error ?? undefined );
     } );
 
@@ -286,11 +231,12 @@ export class WavenerdDeck {
     }
 
     this.__programCue = {
-      program,
       code,
       requiredSamples
     };
+
     this.__setCueStatus( 'ready' );
+
     this.__emit( 'error', { error: null } );
     this.__lastError = null;
   }
@@ -301,6 +247,7 @@ export class WavenerdDeck {
   public applyCue(): void {
     if ( this.__cueStatus === 'ready' ) {
       this.__setCueStatus( 'applying' );
+
       this.__programSwapTime =
         this.beatManager.time - this.beatManager.bar + this.beatManager.barSeconds;
     }
@@ -344,26 +291,14 @@ export class WavenerdDeck {
       buffer[ i * 4 + 1 ] = dataR[ i ];
     }
 
-    const glCat = this.__glCat;
-    const { gl } = glCat;
-    const texture = this.__glCat.createTexture()!;
-    texture.setTextureFromArray(
-      width,
-      height,
-      buffer,
-      {
-        internalformat: gl.RGBA32F,
-        format: gl.RGBA,
-        type: gl.FLOAT,
-      }
-    );
-    texture.textureFilter( gl.NEAREST );
+    this.__renderer.uploadTexture( name, width, height, buffer );
 
     this.samples.set(
       name,
       {
         name,
-        texture,
+        width,
+        height,
         sampleRate,
         duration
       }
@@ -386,11 +321,14 @@ export class WavenerdDeck {
   public deleteSample( name: string ): void {
     if ( this.samples.has( name ) ) {
       this.samples.delete( name );
+
+      this.__renderer.deleteTexture( name );
+
       this.__emit( 'deleteSample', { name } );
     }
   }
 
-  public update(): void {
+  public async update(): Promise<void> {
     const bufferReaderNode = this.__bufferReaderNode;
     if ( bufferReaderNode == null ) { return; }
 
@@ -423,27 +361,28 @@ export class WavenerdDeck {
     if ( beginNext < 0 ) {
       this.__setCueStatus( 'none' );
 
-      const prevProgram = this.__program;
-      this.__program = this.__programCue;
+      this.__renderer.applyCue();
 
-      if ( prevProgram ) {
-        prevProgram.program.dispose( true );
-      }
+      this.__program = this.__programCue;
       this.__programCue = null;
 
       beginNext = framesPerRender;
     }
 
     if ( this.__program ) {
-      this.__prepareBuffer( this.__program, 0, beginNext );
+      await this.__prepareBuffer( 0, beginNext );
     }
 
     // process the next program??
-    if ( beginNext < framesPerRender ) {
-      // render
-      if ( this.__programCue ) {
-        this.__prepareBuffer( this.__programCue, beginNext, framesPerRender - beginNext );
-      }
+    if ( beginNext < framesPerRender && this.__programCue != null ) {
+      this.__setCueStatus( 'none' );
+
+      this.__renderer.applyCue();
+
+      this.__program = this.__programCue;
+      this.__programCue = null;
+
+      await this.__prepareBuffer( beginNext, framesPerRender - beginNext );
     }
 
     this.__bufferWriteBlocks += this.blocksPerRender;
@@ -452,11 +391,10 @@ export class WavenerdDeck {
     this.__emit( 'update' );
   }
 
-  private __prepareBuffer(
-    program: WavenerdDeckProgram,
+  private async __prepareBuffer(
     first: number,
     count: number
-  ): void {
+  ): Promise<void> {
     const bufferReaderNode = this.__bufferReaderNode;
     if ( bufferReaderNode == null ) { return; }
 
@@ -471,7 +409,6 @@ export class WavenerdDeck {
       deltaTime,
     } = this.beatManager;
     const { sampleRate } = this;
-    const { gl } = this.__glCat;
 
     // render
     this.params.forEach( ( param ) => {
@@ -481,9 +418,8 @@ export class WavenerdDeck {
         param.value = lerp( param.target, param.value, Math.exp( -param.factor * deltaTime ) );
       }
 
-      program.program.uniform(
+      this.__renderer.uniform4f(
         'param_' + param.name,
-        '4f',
         param.target,
         param.value,
         param.factor,
@@ -491,83 +427,52 @@ export class WavenerdDeck {
       );
     } );
 
+    let textureUnit = 0;
     this.samples.forEach( ( sample ) => {
-      program.program.uniformTexture( 'sample_' + sample.name, sample.texture );
-      program.program.uniform(
+      this.__renderer.uniformTexture( 'sample_' + sample.name, sample.name, textureUnit );
+      textureUnit ++;
+
+      this.__renderer.uniform4f(
         'sample_' + sample.name + '_meta',
-        '4f',
-        sample.texture.width,
-        sample.texture.height,
+        sample.width,
+        sample.height,
         sample.sampleRate,
         sample.duration
       );
     } );
 
-    program.program.attribute( 'off', this.__bufferOff, 1 );
-    program.program.uniform( 'bpm', '1f', this.bpm );
-    program.program.uniform( '_deltaSample', '1f', 1.0 / sampleRate );
-    program.program.uniform(
+    this.__renderer.uniform1f( 'bpm', this.bpm );
+    this.__renderer.uniform1f( '_deltaSample', 1.0 / sampleRate );
+    this.__renderer.uniform4f(
       'timeLength',
-      '4f',
       beatSeconds,
       barSeconds,
       sixteenBarSeconds,
       1E16
     );
-    program.program.uniform(
+    this.__renderer.uniform4f(
       '_timeHead',
-      '4f',
       beat,
       bar,
       sixteenBar,
       time
     );
 
-    this.__glCat.useProgram( program.program, () => {
-      this.__glCat.bindTransformFeedback( this.__transformFeedback, () => {
-        gl.enable( gl.RASTERIZER_DISCARD );
-        gl.beginTransformFeedback( gl.POINTS );
-        gl.drawArrays( gl.POINTS, first, count );
-        gl.endTransformFeedback();
-        gl.disable( gl.RASTERIZER_DISCARD );
-      } );
-    } );
+    const [ outL, outR ] = await this.__renderer.render( first, count );
 
-    gl.flush();
+    bufferReaderNode.write(
+      0,
+      this.__bufferWriteBlocks,
+      first,
+      outL.subarray( first, first + count ),
+    );
 
-    this.__glCat.bindVertexBuffer( this.__bufferTransformFeedbacks[ 0 ], () => {
-      gl.getBufferSubData(
-        gl.ARRAY_BUFFER,
-        0,
-        this.__bufferTFDestination,
-        first,
-        count,
-      );
-
-      bufferReaderNode.write(
-        0,
-        this.__bufferWriteBlocks,
-        first,
-        this.__bufferTFDestination.subarray( first, first + count ),
-      );
-    } );
-
-    this.__glCat.bindVertexBuffer( this.__bufferTransformFeedbacks[ 1 ], () => {
-      gl.getBufferSubData(
-        gl.ARRAY_BUFFER,
-        0,
-        this.__bufferTFDestination,
-        first,
-        count
-      );
-
-      bufferReaderNode.write(
-        1,
-        this.__bufferWriteBlocks,
-        first,
-        this.__bufferTFDestination.subarray( first, first + count ),
-      );
-    } );
+    bufferReaderNode.write(
+      1,
+      this.__bufferWriteBlocks,
+      first,
+      outR.subarray( first, first + count ),
+    );
   }
 
   private __setCueStatus( cueStatus: 'none' | 'compiling' | 'ready' | 'applying' ): void {
