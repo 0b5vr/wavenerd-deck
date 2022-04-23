@@ -7,6 +7,8 @@ export class Renderer {
   public readonly gl: WebGL2RenderingContext;
   public readonly blocksPerRender: number;
 
+  public readonly __extParallel: any;
+
   public get framesPerRender(): number {
     return BLOCK_SIZE * this.blocksPerRender;
   }
@@ -26,6 +28,8 @@ export class Renderer {
     this.blocksPerRender = blocksPerRender;
 
     this.gl = gl;
+
+    this.__extParallel = gl.getExtension( 'KHR_parallel_shader_compile' );
 
     this.__offsetBuffer = this.__createOffsetBuffer();
     this.__tfBuffers = [
@@ -76,6 +80,7 @@ export class Renderer {
       shaderchunkPre + code + shaderchunkPost,
       '#version 300 es\nvoid main(){discard;}',
       {
+        extParallel: this.__extParallel,
         tfVaryings: [ 'outL', 'outR' ],
       },
     ).catch( ( error ) => {
