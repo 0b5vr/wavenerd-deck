@@ -33,7 +33,7 @@ vec2 sampleNearest( sampler2D s, vec4 meta, float time ) {
 vec2 sampleSinc( sampler2D s, vec4 meta, float time ) {
   if ( meta.w < time ) { return vec2( 0.0 ); }
   vec2 sum = vec2( 0.0 );
-  float def = 0.5 - fract( time * meta.z );
+  float def = -fract( time * meta.z );
   for ( int i = -5; i <= 5; i ++ ) {
     float x = floor( time * meta.z + float( i ) ) / meta.x;
     float deft = def + float( i );
