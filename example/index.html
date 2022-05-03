@@ -22,17 +22,31 @@
   wavenerdDeck.node.connect( audio.destination );
   wavenerdDeck.bpm = 190;
 
+  await fetch( './wavetables/m-talk.bin' )
+    .then( ( res ) => res.arrayBuffer() )
+    .then( ( buffer ) => {
+      console.log( buffer );
+      const s16 = new Int16Array( buffer );
+      const f32 = new Float32Array( s16.length );
+
+      for ( let i = 0; i < s16.length; i ++ ) {
+        f32[ i ] = s16[ i ] / 32768.0;
+      }
+
+      wavenerdDeck.loadWavetable( 'mtalk', 1024, 6, f32 );
+    } );
+
   await fetch( './samples/amen.ogg' )
-  .then( ( res ) => res.arrayBuffer() )
-  .then( ( buffer ) => wavenerdDeck.loadSample( 'amen', buffer ) );
+    .then( ( res ) => res.arrayBuffer() )
+    .then( ( buffer ) => wavenerdDeck.loadSample( 'amen', buffer ) );
 
   await fetch( './samples/crash.ogg' )
-  .then( ( res ) => res.arrayBuffer() )
-  .then( ( buffer ) => wavenerdDeck.loadSample( 'crash', buffer ) );
+    .then( ( res ) => res.arrayBuffer() )
+    .then( ( buffer ) => wavenerdDeck.loadSample( 'crash', buffer ) );
 
   await fetch( './samples/909oh.ogg' )
-  .then( ( res ) => res.arrayBuffer() )
-  .then( ( buffer ) => wavenerdDeck.loadSample( '909oh', buffer ) );
+    .then( ( res ) => res.arrayBuffer() )
+    .then( ( buffer ) => wavenerdDeck.loadSample( '909oh', buffer ) );
 
   const frag = await fetch( './example.frag' )
     .then( ( res ) => res.text() );

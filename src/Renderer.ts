@@ -194,11 +194,11 @@ export class Renderer {
   /**
    * Set a texture uniform to the current program.
    */
-  public uniformTexture( name: string, textureName: string, unit: number ): void {
+  public uniformTexture( name: string, unit: number ): void {
     const { gl, __program: program } = this;
     if ( program == null ) { return; }
 
-    const texture = this.__textures.get( textureName );
+    const texture = this.__textures.get( name );
     if ( texture == null ) { return; }
 
     const location = gl.getUniformLocation( program, name );

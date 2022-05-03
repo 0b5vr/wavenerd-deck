@@ -10,6 +10,7 @@ const BLOCK_SIZE = 128;
 
 interface WavenerdDeckProgram {
   code: string;
+  requiredWavetables: Set<string>;
   requiredSamples: Set<string>;
 }
 
@@ -18,6 +19,12 @@ interface WavenerdDeckParamEntry {
   value: number;
   factor: number;
   target: number;
+}
+
+interface WavenerdDeckWavetableEntry {
+  name: string;
+  width: number;
+  height: number;
 }
 
 interface WavenerdDeckSampleEntry {
@@ -142,6 +149,15 @@ export class WavenerdDeck {
     return this.__params;
   }
 
+  private __wavetables = new Map<string, WavenerdDeckWavetableEntry>();
+  private get wavetables(): Map<string, WavenerdDeckWavetableEntry> {
+    if ( this.hostDeck ) {
+      return this.hostDeck.wavetables;
+    }
+
+    return this.__wavetables;
+  }
+
   private __samples = new Map<string, WavenerdDeckSampleEntry>();
   private get samples(): Map<string, WavenerdDeckSampleEntry> {
     if ( this.hostDeck ) {
@@ -235,6 +251,13 @@ export class WavenerdDeck {
       throw new Error( error ?? undefined );
     } );
 
+    const requiredWavetables = new Set<string>();
+    for ( const name of this.wavetables.keys() ) {
+      if ( code.search( 'wavetable_' + name ) !== -1 ) {
+        requiredWavetables.add( name );
+      }
+    }
+
     const requiredSamples = new Set<string>();
     for ( const name of this.samples.keys() ) {
       if ( code.search( 'sample_' + name ) !== -1 ) {
@@ -244,7 +267,8 @@ export class WavenerdDeck {
 
     this.__programCue = {
       code,
-      requiredSamples
+      requiredWavetables,
+      requiredSamples,
     };
 
     this.__setCueStatus( 'ready' );
@@ -281,6 +305,56 @@ export class WavenerdDeck {
   }
 
   /**
+   * Load a x-y wavetable and store as a uniform texture.
+   */
+  public async loadWavetable(
+    name: string,
+    width: number,
+    height: number,
+    inputBuffer: Float32Array,
+  ): Promise<void> {
+    const buffer = new Float32Array( width * height * 4 );
+
+    for ( let i = 0; i < width * height; i ++ ) {
+      buffer[ i * 4 + 0 ] = inputBuffer[ i ];
+    }
+
+    this.__renderer.uploadTexture( 'wavetable_' + name, width, height, buffer );
+
+    this.wavetables.set(
+      name,
+      {
+        name,
+        width,
+        height,
+      }
+    );
+
+    if ( this.__program && this.__program.code.search( 'wavetable_' + name ) ) {
+      this.__program.requiredSamples.add( name );
+    }
+
+    if ( this.__programCue && this.__programCue.code.search( 'wavetable_' + name ) ) {
+      this.__programCue.requiredSamples.add( name );
+    }
+
+    this.__emit( 'loadWavetable', { name } );
+  }
+
+  /**
+   * Delete a wavetable.
+   */
+  public deleteWavetable( name: string ): void {
+    if ( this.wavetables.has( name ) ) {
+      this.wavetables.delete( name );
+
+      this.__renderer.deleteTexture( 'wavetable_' + name );
+
+      this.__emit( 'deleteWavetable', { name } );
+    }
+  }
+
+  /**
    * Load a sample and store as a uniform texture.
    */
   public async loadSample( name: string, inputBuffer: ArrayBuffer ): Promise<void> {
@@ -303,7 +377,7 @@ export class WavenerdDeck {
       buffer[ i * 4 + 1 ] = dataR[ i ];
     }
 
-    this.__renderer.uploadTexture( name, width, height, buffer );
+    this.__renderer.uploadTexture( 'sample_' + name, width, height, buffer );
 
     this.samples.set(
       name,
@@ -334,7 +408,7 @@ export class WavenerdDeck {
     if ( this.samples.has( name ) ) {
       this.samples.delete( name );
 
-      this.__renderer.deleteTexture( name );
+      this.__renderer.deleteTexture( 'sample_' + name );
 
       this.__emit( 'deleteSample', { name } );
     }
@@ -442,8 +516,28 @@ export class WavenerdDeck {
     } );
 
     let textureUnit = 0;
+
+    this.wavetables.forEach( ( wavetable ) => {
+      this.__renderer.uniformTexture(
+        'wavetable_' + wavetable.name,
+        textureUnit,
+      );
+      textureUnit ++;
+
+      this.__renderer.uniform4f(
+        'wavetable_' + wavetable.name + '_meta',
+        wavetable.width,
+        wavetable.height,
+        0,
+        0,
+      );
+    } );
+
     this.samples.forEach( ( sample ) => {
-      this.__renderer.uniformTexture( 'sample_' + sample.name, sample.name, textureUnit );
+      this.__renderer.uniformTexture(
+        'sample_' + sample.name,
+        textureUnit,
+      );
       textureUnit ++;
 
       this.__renderer.uniform4f(
@@ -508,8 +602,10 @@ export class WavenerdDeck {
 export interface WavenerdDeck extends EventEmittable<{
   update: void;
   changeCueStatus: { cueStatus: 'none' | 'compiling' | 'ready' | 'applying' };
-  loadSample: { name: string; sampleRate: number; duration: number };
   setParam: { name: string; value: number; factor: number };
+  loadWavetable: { name: string };
+  deleteWavetable: { name: string };
+  loadSample: { name: string; sampleRate: number; duration: number };
   deleteSample: { name: string };
   changeBPM: { bpm: number };
   error: { error: string | null };

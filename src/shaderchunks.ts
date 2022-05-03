@@ -19,6 +19,39 @@ float paramFetch( vec4 param ) {
   return mix( param.x, param.y, exp( -param.z * off * _deltaSample ) );
 }
 
+float wavetableNearest( sampler2D w, vec4 meta, vec2 position ) {
+  vec2 uv0 = fract( vec2(
+    position.x,
+    ( floor( fract( position.y ) * ( meta.y - 1.0 ) ) + 0.5 ) / meta.y
+  ) );
+  vec2 uv1 = uv0 + vec2( 0.0, 1.0 / meta.y );
+  return mix(
+    texture( w, uv0 ).x,
+    texture( w, uv1 ).x,
+    fract( position.y * ( meta.y - 1.0 ) )
+  );
+}
+
+float wavetableSinc( sampler2D w, vec4 meta, vec2 position ) {
+  float sum = 0.0;
+  float def = -fract( position.x * meta.x );
+  for ( int i = -5; i <= 5; i ++ ) {
+    float x = floor( position.x * meta.x + float( i ) ) / meta.x;
+    float deft = def + float( i );
+    vec2 uv0 = fract( vec2(
+      x,
+      ( floor( fract( position.y ) * ( meta.y - 1.0 ) ) + 0.5 ) / meta.y
+    ) );
+    vec2 uv1 = uv0 + vec2( 0.0, 1.0 / meta.y );
+    sum += mix(
+      texture( w, uv0 ).x,
+      texture( w, uv1 ).x,
+      fract( position.y * ( meta.y - 1.0 ) )
+    ) * min( sin( deft * _PI ) / deft / _PI, 1.0 );
+  }
+  return sum;
+}
+
 vec2 sampleNearest( sampler2D s, vec4 meta, float time ) {
   if ( meta.w < time ) { return vec2( 0.0 ); }
   float x = time / meta.x * meta.z;
@@ -29,7 +62,6 @@ vec2 sampleNearest( sampler2D s, vec4 meta, float time ) {
   return texture( s, uv ).xy;
 }
 
-// I have 0% confidence that the algorithm is perfect
 vec2 sampleSinc( sampler2D s, vec4 meta, float time ) {
   if ( meta.w < time ) { return vec2( 0.0 ); }
   vec2 sum = vec2( 0.0 );
