@@ -19,6 +19,7 @@ uniform sampler2D sample_909oh;
 uniform vec4 sample_909oh_meta;
 uniform sampler2D sample_crash;
 uniform vec4 sample_crash_meta;
+uniform sampler2D image_fbm;
 
 float kick( float t ) {
   if ( t < 0.0 ) { return 0.0; }

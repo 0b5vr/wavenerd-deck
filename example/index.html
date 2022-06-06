@@ -10,87 +10,82 @@
   <input id="inputUniformKnob" type="range" step="0.001" min="0" max="1" value="0" /> Knob
 </body>
 
-<script src="../dist/wavenerd-deck.iife.js"></script>
-<script>
-( async() => {
-  const canvas = document.createElement( 'canvas' );
-  const gl = canvas.getContext( 'webgl2' );
+<script type="module">
+  import { WavenerdDeck } from '../dist/wavenerd-deck.esm.js';
+  import { fetchS16Wavetable } from './fetchS16Wavetable.js';
+  import { fetchImage } from './fetchImage.js';
 
-  const audio = new AudioContext();
+  ( async () => {
+    const canvas = document.createElement( 'canvas' );
+    const gl = canvas.getContext( 'webgl2' );
 
-  const wavenerdDeck = new WAVENERD_DECK.WavenerdDeck( { gl, audio } );
-  wavenerdDeck.node.connect( audio.destination );
-  wavenerdDeck.bpm = 190;
+    const audio = new AudioContext();
 
-  await fetch( './wavetables/m-talk.bin' )
-    .then( ( res ) => res.arrayBuffer() )
-    .then( ( buffer ) => {
-      console.log( buffer );
-      const s16 = new Int16Array( buffer );
-      const f32 = new Float32Array( s16.length );
+    const wavenerdDeck = new WavenerdDeck( { gl, audio } );
+    wavenerdDeck.node.connect( audio.destination );
+    wavenerdDeck.bpm = 190;
 
-      for ( let i = 0; i < s16.length; i ++ ) {
-        f32[ i ] = s16[ i ] / 32768.0;
-      }
+    await fetchS16Wavetable( './wavetables/m-talk.bin' )
+      .then( ( buffer ) => wavenerdDeck.loadWavetable( 'mtalk', 1024, 6, buffer ) )
 
-      wavenerdDeck.loadWavetable( 'mtalk', 1024, 6, f32 );
+    await fetchImage( './images/fbm.png' )
+      .then( ( image ) => wavenerdDeck.loadImage( 'fbm', image ) );
+
+    await fetch( './samples/amen.ogg' )
+      .then( ( res ) => res.arrayBuffer() )
+      .then( ( buffer ) => wavenerdDeck.loadSample( 'amen', buffer ) );
+
+    await fetch( './samples/crash.ogg' )
+      .then( ( res ) => res.arrayBuffer() )
+      .then( ( buffer ) => wavenerdDeck.loadSample( 'crash', buffer ) );
+
+    await fetch( './samples/909oh.ogg' )
+      .then( ( res ) => res.arrayBuffer() )
+      .then( ( buffer ) => wavenerdDeck.loadSample( '909oh', buffer ) );
+
+    const frag = await fetch( './example.frag' )
+      .then( ( res ) => res.text() );
+
+    textarea.value = frag;
+
+    wavenerdDeck.compile( frag );
+
+    // == update wavenerd ============================================================================
+    function update() {
+      wavenerdDeck.update();
+      requestAnimationFrame( update );
+    }
+    requestAnimationFrame( update );
+
+    // == wavenerd deck event listeners ==============================================================
+    wavenerdDeck.on( 'changeCueStatus', ( { cueStatus } ) => {
+      buttonApplyCue.disabled = cueStatus !== 'ready';
+
+      spanStatus.innerText = (
+        cueStatus === 'none' ? 'Awaiting cue' :
+        cueStatus === 'compiling' ? 'Compiling' :
+        cueStatus === 'ready' ? 'Ready' :
+        'Applying...'
+      )
     } );
 
-  await fetch( './samples/amen.ogg' )
-    .then( ( res ) => res.arrayBuffer() )
-    .then( ( buffer ) => wavenerdDeck.loadSample( 'amen', buffer ) );
+    // == ui listeners ===============================================================================
+    inputBpm.addEventListener( 'change', () => {
+      wavenerdDeck.bpm = inputBpm.value;
+    } );
 
-  await fetch( './samples/crash.ogg' )
-    .then( ( res ) => res.arrayBuffer() )
-    .then( ( buffer ) => wavenerdDeck.loadSample( 'crash', buffer ) );
+    buttonCompile.addEventListener( 'click', () => {
+      audio.resume(); // uh
+      wavenerdDeck.compile( textarea.value );
+    } );
 
-  await fetch( './samples/909oh.ogg' )
-    .then( ( res ) => res.arrayBuffer() )
-    .then( ( buffer ) => wavenerdDeck.loadSample( '909oh', buffer ) );
+    buttonApplyCue.addEventListener( 'click', () => {
+      audio.resume(); // uh
+      wavenerdDeck.applyCue();
+    } );
 
-  const frag = await fetch( './example.frag' )
-    .then( ( res ) => res.text() );
-
-  textarea.value = frag;
-
-  wavenerdDeck.compile( frag );
-
-  // == update wavenerd ============================================================================
-  function update() {
-    wavenerdDeck.update();
-    requestAnimationFrame( update );
-  }
-  requestAnimationFrame( update );
-
-  // == wavenerd deck event listeners ==============================================================
-  wavenerdDeck.on( 'changeCueStatus', ( { cueStatus } ) => {
-    buttonApplyCue.disabled = cueStatus !== 'ready';
-
-    spanStatus.innerText = (
-      cueStatus === 'none' ? 'Awaiting cue' :
-      cueStatus === 'compiling' ? 'Compiling' :
-      cueStatus === 'ready' ? 'Ready' :
-      'Applying...'
-    )
-  } );
-
-  // == ui listeners ===============================================================================
-  inputBpm.addEventListener( 'change', () => {
-    wavenerdDeck.bpm = inputBpm.value;
-  } );
-
-  buttonCompile.addEventListener( 'click', () => {
-    audio.resume(); // uh
-    wavenerdDeck.compile( textarea.value );
-  } );
-
-  buttonApplyCue.addEventListener( 'click', () => {
-    audio.resume(); // uh
-    wavenerdDeck.applyCue();
-  } );
-
-  inputUniformKnob.addEventListener( 'input', () => {
-    wavenerdDeck.setParam( 'knob', parseFloat( inputUniformKnob.value ) );
-  } );
-} )();
+    inputUniformKnob.addEventListener( 'input', () => {
+      wavenerdDeck.setParam( 'knob', parseFloat( inputUniformKnob.value ) );
+    } );
+  } )();
 </script>
