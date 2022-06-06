@@ -304,30 +304,30 @@ export class WavenerdDeck {
 
   /**
    * Load a x-y wavetable and store as a uniform texture.
+   * The buffer have to be encoded in F32, 2048 samples per cycle.
    */
   public async loadWavetable(
     name: string,
-    width: number,
-    height: number,
     inputBuffer: Float32Array,
   ): Promise<void> {
-    const buffer = new Float32Array( width * height * 4 );
+    const frames = inputBuffer.length / 2048;
+    const buffer = new Float32Array( inputBuffer.length * 4 );
 
-    for ( let i = 0; i < width * height; i ++ ) {
+    for ( let i = 0; i < inputBuffer.length; i ++ ) {
       buffer[ i * 4 + 0 ] = inputBuffer[ i ];
     }
 
     const textureName = `wavetable_${ name }`;
 
-    this.__renderer.uploadTexture( textureName, width, height, buffer );
+    this.__renderer.uploadTexture( textureName, 2048, frames, buffer );
 
     this.textures.set(
       textureName,
       {
         type: 'wavetable',
         name,
-        width,
-        height,
+        width: 2048,
+        height: frames,
       }
     );
 
