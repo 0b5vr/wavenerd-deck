@@ -20,25 +20,33 @@ interface WavenerdDeckParamEntry {
   target: number;
 }
 
-interface WavenerdDeckWavetableEntry {
-  name: string;
-  width: number;
-  height: number;
-}
-
-interface WavenerdDeckImageEntry {
-  name: string;
-  width: number;
-  height: number;
-}
-
 interface WavenerdDeckSampleEntry {
+  type: 'sample';
   name: string;
   width: number;
   height: number;
   sampleRate: number;
   duration: number;
 }
+
+interface WavenerdDeckWavetableEntry {
+  type: 'wavetable';
+  name: string;
+  width: number;
+  height: number;
+}
+
+interface WavenerdDeckImageEntry {
+  type: 'image';
+  name: string;
+  width: number;
+  height: number;
+}
+
+type WavenerdDeckTextureEntry =
+  | WavenerdDeckSampleEntry
+  | WavenerdDeckWavetableEntry
+  | WavenerdDeckImageEntry;
 
 export class WavenerdDeck {
   /**
@@ -154,31 +162,13 @@ export class WavenerdDeck {
     return this.__params;
   }
 
-  private __wavetables = new Map<string, WavenerdDeckWavetableEntry>();
-  private get wavetables(): Map<string, WavenerdDeckWavetableEntry> {
+  private __textures = new Map<string, WavenerdDeckTextureEntry>();
+  private get textures(): Map<string, WavenerdDeckTextureEntry> {
     if ( this.hostDeck ) {
-      return this.hostDeck.wavetables;
+      return this.hostDeck.textures;
     }
 
-    return this.__wavetables;
-  }
-
-  private __images = new Map<string, WavenerdDeckImageEntry>();
-  private get images(): Map<string, WavenerdDeckImageEntry> {
-    if ( this.hostDeck ) {
-      return this.hostDeck.images;
-    }
-
-    return this.__images;
-  }
-
-  private __samples = new Map<string, WavenerdDeckSampleEntry>();
-  private get samples(): Map<string, WavenerdDeckSampleEntry> {
-    if ( this.hostDeck ) {
-      return this.hostDeck.samples;
-    }
-
-    return this.__samples;
+    return this.__textures;
   }
 
   /**
@@ -267,22 +257,8 @@ export class WavenerdDeck {
 
     const requiredTextures = new Set<string>();
 
-    for ( const name of this.wavetables.keys() ) {
-      const textureName = 'wavetable_' + name;
-      if ( code.search( textureName ) !== -1 ) {
-        requiredTextures.add( textureName );
-      }
-    }
-
-    for ( const name of this.images.keys() ) {
-      const textureName = 'image_' + name;
-      if ( code.search( textureName ) !== -1 ) {
-        requiredTextures.add( textureName );
-      }
-    }
-
-    for ( const name of this.samples.keys() ) {
-      const textureName = 'sample_' + name;
+    for ( const texture of this.textures.values() ) {
+      const textureName = `${ texture.type }_${ texture.name }`;
       if ( code.search( textureName ) !== -1 ) {
         requiredTextures.add( textureName );
       }
@@ -341,22 +317,25 @@ export class WavenerdDeck {
       buffer[ i * 4 + 0 ] = inputBuffer[ i ];
     }
 
-    this.__renderer.uploadTexture( 'wavetable_' + name, width, height, buffer );
+    const textureName = `wavetable_${ name }`;
 
-    this.wavetables.set(
-      name,
+    this.__renderer.uploadTexture( textureName, width, height, buffer );
+
+    this.textures.set(
+      textureName,
       {
+        type: 'wavetable',
         name,
         width,
         height,
       }
     );
 
-    if ( this.__program && this.__program.code.search( 'wavetable_' + name ) ) {
+    if ( this.__program && this.__program.code.search( textureName ) ) {
       this.__program.requiredTextures.add( name );
     }
 
-    if ( this.__programCue && this.__programCue.code.search( 'wavetable_' + name ) ) {
+    if ( this.__programCue && this.__programCue.code.search( textureName ) ) {
       this.__programCue.requiredTextures.add( name );
     }
 
@@ -367,10 +346,12 @@ export class WavenerdDeck {
    * Delete a wavetable.
    */
   public deleteWavetable( name: string ): void {
-    if ( this.wavetables.has( name ) ) {
-      this.wavetables.delete( name );
+    const textureName = `wavetable_${ name }`;
 
-      this.__renderer.deleteTexture( 'wavetable_' + name );
+    if ( this.textures.has( textureName ) ) {
+      this.textures.delete( textureName );
+
+      this.__renderer.deleteTexture( textureName );
 
       this.__emit( 'deleteWavetable', { name } );
     }
@@ -383,22 +364,25 @@ export class WavenerdDeck {
     name: string,
     image: TexImageSource,
   ): Promise<void> {
-    this.__renderer.uploadImageSource( 'image_' + name, image );
+    const textureName = `image_${ name }`;
 
-    this.images.set(
-      name,
+    this.__renderer.uploadImageSource( textureName, image );
+
+    this.textures.set(
+      textureName,
       {
+        type: 'image',
         name,
         width: image.width,
         height: image.height,
       }
     );
 
-    if ( this.__program && this.__program.code.search( 'image_' + name ) ) {
+    if ( this.__program && this.__program.code.search( textureName ) ) {
       this.__program.requiredTextures.add( name );
     }
 
-    if ( this.__programCue && this.__programCue.code.search( 'image_' + name ) ) {
+    if ( this.__programCue && this.__programCue.code.search( textureName ) ) {
       this.__programCue.requiredTextures.add( name );
     }
 
@@ -409,10 +393,12 @@ export class WavenerdDeck {
    * Delete an image.
    */
   public deleteImage( name: string ): void {
-    if ( this.images.has( name ) ) {
-      this.images.delete( name );
+    const textureName = `image_${ name }`;
 
-      this.__renderer.deleteTexture( 'image_' + name );
+    if ( this.textures.has( textureName ) ) {
+      this.textures.delete( textureName );
+
+      this.__renderer.deleteTexture( textureName );
 
       this.__emit( 'deleteImage', { name } );
     }
@@ -441,11 +427,14 @@ export class WavenerdDeck {
       buffer[ i * 4 + 1 ] = dataR[ i ];
     }
 
-    this.__renderer.uploadTexture( 'sample_' + name, width, height, buffer );
+    const textureName = `sample_${ name }`;
 
-    this.samples.set(
-      name,
+    this.__renderer.uploadTexture( textureName, width, height, buffer );
+
+    this.textures.set(
+      textureName,
       {
+        type: 'sample',
         name,
         width,
         height,
@@ -454,11 +443,11 @@ export class WavenerdDeck {
       }
     );
 
-    if ( this.__program && this.__program.code.search( 'sample_' + name ) ) {
+    if ( this.__program && this.__program.code.search( textureName ) ) {
       this.__program.requiredTextures.add( name );
     }
 
-    if ( this.__programCue && this.__programCue.code.search( 'sample_' + name ) ) {
+    if ( this.__programCue && this.__programCue.code.search( textureName ) ) {
       this.__programCue.requiredTextures.add( name );
     }
 
@@ -469,10 +458,12 @@ export class WavenerdDeck {
    * Delete a sample.
    */
   public deleteSample( name: string ): void {
-    if ( this.samples.has( name ) ) {
-      this.samples.delete( name );
+    const textureName = `sample_${ name }`;
 
-      this.__renderer.deleteTexture( 'sample_' + name );
+    if ( this.textures.has( textureName ) ) {
+      this.textures.delete( textureName );
+
+      this.__renderer.deleteTexture( textureName );
 
       this.__emit( 'deleteSample', { name } );
     }
@@ -583,66 +574,38 @@ export class WavenerdDeck {
 
     const { requiredTextures } = this.__program!;
 
-    this.wavetables.forEach( ( wavetable ) => {
-      const textureName = 'wavetable_' + wavetable.name;
+    for ( const textureName of requiredTextures ) {
+      const texture = this.textures.get( textureName );
 
-      if ( requiredTextures.has( textureName ) ) {
+      if ( texture != null ) {
         this.__renderer.uniformTexture(
           textureName,
           textureUnit,
         );
         textureUnit ++;
 
-        this.__renderer.uniform4f(
-          textureName + '_meta',
-          wavetable.width,
-          wavetable.height,
-          0,
-          0,
-        );
-      }
-
-    } );
-
-    this.images.forEach( ( image ) => {
-      const textureName = 'image_' + image.name;
-
-      if ( requiredTextures.has( textureName ) ) {
-        this.__renderer.uniformTexture(
-          textureName,
-          textureUnit,
-        );
-        textureUnit ++;
+        const meta = (
+          texture.type === 'sample'
+            ? [
+              texture.width,
+              texture.height,
+              texture.sampleRate,
+              texture.duration,
+            ]
+            : [
+              texture.width,
+              texture.height,
+              0,
+              0,
+            ]
+        ) as [ number, number, number, number ];
 
         this.__renderer.uniform4f(
           textureName + '_meta',
-          image.width,
-          image.height,
-          0,
-          0,
+          ...meta,
         );
       }
-    } );
-
-    this.samples.forEach( ( sample ) => {
-      const textureName = 'sample_' + sample.name;
-
-      if ( requiredTextures.has( textureName ) ) {
-        this.__renderer.uniformTexture(
-          textureName,
-          textureUnit,
-        );
-        textureUnit ++;
-
-        this.__renderer.uniform4f(
-          textureName + '_meta',
-          sample.width,
-          sample.height,
-          sample.sampleRate,
-          sample.duration
-        );
-      }
-    } );
+    }
 
     this.__renderer.uniform1f( 'bpm', this.bpm );
     this.__renderer.uniform1f( '_deltaSample', 1.0 / sampleRate );
