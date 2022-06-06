@@ -31,6 +31,10 @@ export declare class Renderer {
      */
     uploadTexture(textureName: string, width: number, height: number, source: Float32Array): void;
     /**
+     * Create a texture and upload data.
+     */
+    uploadImageSource(textureName: string, source: TexImageSource): void;
+    /**
      * Delete a texture entry.
      */
     deleteTexture(textureName: string): void;
@@ -45,7 +49,7 @@ export declare class Renderer {
     /**
      * Set a texture uniform to the current program.
      */
-    uniformTexture(name: string, textureName: string, unit: number): void;
+    uniformTexture(name: string, unit: number): void;
     /**
      * Render and return a buffer.
      */

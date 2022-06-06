@@ -71,8 +71,8 @@ export declare class WavenerdDeck {
     private __programSwapTime;
     private __params;
     private get params();
-    private __samples;
-    private get samples();
+    private __textures;
+    private get textures();
     /**
      * Constructor of the WavenerdDeck.
      */
@@ -101,6 +101,23 @@ export declare class WavenerdDeck {
      */
     setParam(name: string, value: number, factor?: number): void;
     /**
+     * Load a x-y wavetable and store as a uniform texture.
+     * The buffer have to be encoded in F32, 2048 samples per cycle.
+     */
+    loadWavetable(name: string, inputBuffer: Float32Array): Promise<void>;
+    /**
+     * Delete a wavetable.
+     */
+    deleteWavetable(name: string): void;
+    /**
+     * Load an image and store as a uniform texture.
+     */
+    loadImage(name: string, image: TexImageSource): Promise<void>;
+    /**
+     * Delete an image.
+     */
+    deleteImage(name: string): void;
+    /**
      * Load a sample and store as a uniform texture.
      */
     loadSample(name: string, inputBuffer: ArrayBuffer): Promise<void>;
@@ -118,15 +135,27 @@ export interface WavenerdDeck extends EventEmittable<{
     changeCueStatus: {
         cueStatus: 'none' | 'compiling' | 'ready' | 'applying';
     };
-    loadSample: {
-        name: string;
-        sampleRate: number;
-        duration: number;
-    };
     setParam: {
         name: string;
         value: number;
         factor: number;
+    };
+    loadWavetable: {
+        name: string;
+    };
+    deleteWavetable: {
+        name: string;
+    };
+    loadImage: {
+        name: string;
+    };
+    deleteImage: {
+        name: string;
+    };
+    loadSample: {
+        name: string;
+        sampleRate: number;
+        duration: number;
     };
     deleteSample: {
         name: string;

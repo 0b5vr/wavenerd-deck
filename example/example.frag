@@ -11,12 +11,15 @@
 #define TAU 6.28318530718
 
 uniform vec4 param_knob;
+uniform sampler2D wavetable_mtalk;
+uniform vec4 wavetable_mtalk_meta;
 uniform sampler2D sample_amen;
 uniform vec4 sample_amen_meta;
 uniform sampler2D sample_909oh;
 uniform vec4 sample_909oh_meta;
 uniform sampler2D sample_crash;
 uniform vec4 sample_crash_meta;
+uniform sampler2D image_fbm;
 
 float kick( float t ) {
   if ( t < 0.0 ) { return 0.0; }
@@ -66,6 +69,10 @@ vec2 mainAudio( vec4 time ) {
   amenTime += 0.01 * knob * sin( exp( knob * 10.0 ) * time.y );
   vec2 aAmen = clip( 8.0 * sampleSinc( sample_amen, sample_amen_meta, amenTime ) );
   dest += 0.2 * aAmen;
+
+  vec2 wtPosition = vec2( 33.0 * time.y, time.y / ( 4.0 beat ) );
+  vec2 wtWave = vec2( wavetableSinc( wavetable_mtalk, wavetable_mtalk_meta, wtPosition ) );
+  dest += 0.4 * sidechain * wtWave;
 
   return dest;
 }

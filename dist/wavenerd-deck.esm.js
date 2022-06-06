@@ -1,5 +1,5 @@
 /*!
-* @0b5vr/wavenerd-deck v0.5.2
+* @0b5vr/wavenerd-deck v0.5.4
 * a
 *
 * Copyright (c) 2020-2022 0b5vr
@@ -211,6 +211,39 @@ float paramFetch( vec4 param ) {
   return mix( param.x, param.y, exp( -param.z * off * _deltaSample ) );
 }
 
+float wavetableNearest( sampler2D w, vec4 meta, vec2 position ) {
+  vec2 uv0 = fract( vec2(
+    position.x,
+    ( floor( fract( position.y ) * ( meta.y - 1.0 ) ) + 0.5 ) / meta.y
+  ) );
+  vec2 uv1 = uv0 + vec2( 0.0, 1.0 / meta.y );
+  return mix(
+    texture( w, uv0 ).x,
+    texture( w, uv1 ).x,
+    fract( position.y * ( meta.y - 1.0 ) )
+  );
+}
+
+float wavetableSinc( sampler2D w, vec4 meta, vec2 position ) {
+  float sum = 0.0;
+  float def = -fract( position.x * meta.x );
+  for ( int i = -5; i <= 5; i ++ ) {
+    float x = floor( position.x * meta.x + float( i ) ) / meta.x;
+    float deft = def + float( i );
+    vec2 uv0 = fract( vec2(
+      x,
+      ( floor( fract( position.y ) * ( meta.y - 1.0 ) ) + 0.5 ) / meta.y
+    ) );
+    vec2 uv1 = uv0 + vec2( 0.0, 1.0 / meta.y );
+    sum += mix(
+      texture( w, uv0 ).x,
+      texture( w, uv1 ).x,
+      fract( position.y * ( meta.y - 1.0 ) )
+    ) * min( sin( deft * _PI ) / deft / _PI, 1.0 );
+  }
+  return sum;
+}
+
 vec2 sampleNearest( sampler2D s, vec4 meta, float time ) {
   if ( meta.w < time ) { return vec2( 0.0 ); }
   float x = time / meta.x * meta.z;
@@ -221,11 +254,10 @@ vec2 sampleNearest( sampler2D s, vec4 meta, float time ) {
   return texture( s, uv ).xy;
 }
 
-// I have 0% confidence that the algorithm is perfect
 vec2 sampleSinc( sampler2D s, vec4 meta, float time ) {
   if ( meta.w < time ) { return vec2( 0.0 ); }
   vec2 sum = vec2( 0.0 );
-  float def = 0.5 - fract( time * meta.z );
+  float def = -fract( time * meta.z );
   for ( int i = -5; i <= 5; i ++ ) {
     float x = floor( time * meta.z + float( i ) ) / meta.x;
     float deft = def + float( i );
@@ -382,6 +414,16 @@ var Renderer = class {
     gl.bindTexture(gl.TEXTURE_2D, null);
     this.__textures.set(textureName, texture);
   }
+  uploadImageSource(textureName, source) {
+    const { gl } = this;
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, source);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    this.__textures.set(textureName, texture);
+  }
   deleteTexture(textureName) {
     const { gl } = this;
     const texture = this.__textures.get(textureName);
@@ -411,12 +453,12 @@ var Renderer = class {
     gl.uniform4f(location, ...value);
     gl.useProgram(null);
   }
-  uniformTexture(name, textureName, unit) {
+  uniformTexture(name, unit) {
     const { gl, __program: program } = this;
     if (program == null) {
       return;
     }
-    const texture = this.__textures.get(textureName);
+    const texture = this.__textures.get(name);
     if (texture == null) {
       return;
     }
@@ -515,7 +557,7 @@ var WavenerdDeck = class {
     __publicField(this, "__programCue");
     __publicField(this, "__programSwapTime");
     __publicField(this, "__params", /* @__PURE__ */ new Map());
-    __publicField(this, "__samples", /* @__PURE__ */ new Map());
+    __publicField(this, "__textures", /* @__PURE__ */ new Map());
     this.latencyBlocks = latencyBlocks != null ? latencyBlocks : 16;
     this.__blocksPerRender = blocksPerRender != null ? blocksPerRender : 16;
     if (hostDeck) {
@@ -577,11 +619,11 @@ var WavenerdDeck = class {
   get params() {
     return this.__params;
   }
-  get samples() {
+  get textures() {
     if (this.hostDeck) {
-      return this.hostDeck.samples;
+      return this.hostDeck.textures;
     }
-    return this.__samples;
+    return this.__textures;
   }
   dispose() {
     var _a;
@@ -600,15 +642,16 @@ var WavenerdDeck = class {
         this.__lastError = error;
         throw new Error(error != null ? error : void 0);
       });
-      const requiredSamples = /* @__PURE__ */ new Set();
-      for (const name of this.samples.keys()) {
-        if (code.search("sample_" + name) !== -1) {
-          requiredSamples.add(name);
+      const requiredTextures = /* @__PURE__ */ new Set();
+      for (const texture of this.textures.values()) {
+        const textureName = `${texture.type}_${texture.name}`;
+        if (code.search(textureName) !== -1) {
+          requiredTextures.add(textureName);
         }
       }
       this.__programCue = {
         code,
-        requiredSamples
+        requiredTextures
       };
       this.__setCueStatus("ready");
       this.__emit("error", { error: null });
@@ -631,6 +674,65 @@ var WavenerdDeck = class {
     }
     this.__emit("setParam", { name, value, factor });
   }
+  loadWavetable(name, inputBuffer) {
+    return __async(this, null, function* () {
+      const frames = inputBuffer.length / 2048;
+      const buffer = new Float32Array(inputBuffer.length * 4);
+      for (let i = 0; i < inputBuffer.length; i++) {
+        buffer[i * 4 + 0] = inputBuffer[i];
+      }
+      const textureName = `wavetable_${name}`;
+      this.__renderer.uploadTexture(textureName, 2048, frames, buffer);
+      this.textures.set(textureName, {
+        type: "wavetable",
+        name,
+        width: 2048,
+        height: frames
+      });
+      if (this.__program && this.__program.code.search(textureName)) {
+        this.__program.requiredTextures.add(name);
+      }
+      if (this.__programCue && this.__programCue.code.search(textureName)) {
+        this.__programCue.requiredTextures.add(name);
+      }
+      this.__emit("loadWavetable", { name });
+    });
+  }
+  deleteWavetable(name) {
+    const textureName = `wavetable_${name}`;
+    if (this.textures.has(textureName)) {
+      this.textures.delete(textureName);
+      this.__renderer.deleteTexture(textureName);
+      this.__emit("deleteWavetable", { name });
+    }
+  }
+  loadImage(name, image) {
+    return __async(this, null, function* () {
+      const textureName = `image_${name}`;
+      this.__renderer.uploadImageSource(textureName, image);
+      this.textures.set(textureName, {
+        type: "image",
+        name,
+        width: image.width,
+        height: image.height
+      });
+      if (this.__program && this.__program.code.search(textureName)) {
+        this.__program.requiredTextures.add(name);
+      }
+      if (this.__programCue && this.__programCue.code.search(textureName)) {
+        this.__programCue.requiredTextures.add(name);
+      }
+      this.__emit("loadImage", { name });
+    });
+  }
+  deleteImage(name) {
+    const textureName = `image_${name}`;
+    if (this.textures.has(textureName)) {
+      this.textures.delete(textureName);
+      this.__renderer.deleteTexture(textureName);
+      this.__emit("deleteImage", { name });
+    }
+  }
   loadSample(name, inputBuffer) {
     return __async(this, null, function* () {
       const audioBuffer = yield this.__audio.decodeAudioData(inputBuffer);
@@ -647,27 +749,30 @@ var WavenerdDeck = class {
         buffer[i * 4 + 0] = dataL[i];
         buffer[i * 4 + 1] = dataR[i];
       }
-      this.__renderer.uploadTexture(name, width, height, buffer);
-      this.samples.set(name, {
+      const textureName = `sample_${name}`;
+      this.__renderer.uploadTexture(textureName, width, height, buffer);
+      this.textures.set(textureName, {
+        type: "sample",
         name,
         width,
         height,
         sampleRate,
         duration
       });
-      if (this.__program && this.__program.code.search("sample_" + name)) {
-        this.__program.requiredSamples.add(name);
+      if (this.__program && this.__program.code.search(textureName)) {
+        this.__program.requiredTextures.add(name);
       }
-      if (this.__programCue && this.__programCue.code.search("sample_" + name)) {
-        this.__programCue.requiredSamples.add(name);
+      if (this.__programCue && this.__programCue.code.search(textureName)) {
+        this.__programCue.requiredTextures.add(name);
       }
       this.__emit("loadSample", { name, duration, sampleRate });
     });
   }
   deleteSample(name) {
-    if (this.samples.has(name)) {
-      this.samples.delete(name);
-      this.__renderer.deleteTexture(name);
+    const textureName = `sample_${name}`;
+    if (this.textures.has(textureName)) {
+      this.textures.delete(textureName);
+      this.__renderer.deleteTexture(textureName);
       this.__emit("deleteSample", { name });
     }
   }
@@ -738,11 +843,26 @@ var WavenerdDeck = class {
         this.__renderer.uniform4f("param_" + param.name, param.target, param.value, param.factor, 0);
       });
       let textureUnit = 0;
-      this.samples.forEach((sample) => {
-        this.__renderer.uniformTexture("sample_" + sample.name, sample.name, textureUnit);
-        textureUnit++;
-        this.__renderer.uniform4f("sample_" + sample.name + "_meta", sample.width, sample.height, sample.sampleRate, sample.duration);
-      });
+      const { requiredTextures } = this.__program;
+      for (const textureName of requiredTextures) {
+        const texture = this.textures.get(textureName);
+        if (texture != null) {
+          this.__renderer.uniformTexture(textureName, textureUnit);
+          textureUnit++;
+          const meta = texture.type === "sample" ? [
+            texture.width,
+            texture.height,
+            texture.sampleRate,
+            texture.duration
+          ] : [
+            texture.width,
+            texture.height,
+            0,
+            0
+          ];
+          this.__renderer.uniform4f(textureName + "_meta", ...meta);
+        }
+      }
       this.__renderer.uniform1f("bpm", this.bpm);
       this.__renderer.uniform1f("_deltaSample", 1 / sampleRate);
       this.__renderer.uniform4f("timeLength", beatSeconds, barSeconds, sixteenBarSeconds, 1e16);
