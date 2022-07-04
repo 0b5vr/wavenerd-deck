@@ -21,8 +21,28 @@
     const audio = new AudioContext();
 
     const wavenerdDeck = new WavenerdDeck( { gl, audio } );
-    wavenerdDeck.node.connect( audio.destination );
     wavenerdDeck.bpm = 190;
+
+    const splitter = audio.createChannelSplitter( 4 );
+    const mergerOut = audio.createChannelMerger( 2 );
+    const mergerSend = audio.createChannelMerger( 2 );
+    const convolver = audio.createConvolver();
+
+    wavenerdDeck.node.connect( splitter );
+    splitter.connect( mergerOut, 0, 0 );
+    splitter.connect( mergerOut, 1, 1 );
+    splitter.connect( mergerSend, 2, 0 );
+    splitter.connect( mergerSend, 3, 1 );
+    mergerOut.connect( audio.destination );
+    mergerSend.connect( convolver );
+    convolver.connect( audio.destination );
+
+    await fetch( './ir.wav' )
+      .then( ( res ) => res.arrayBuffer() )
+      .then( ( raw ) => audio.decodeAudioData( raw ) )
+      .then( ( buffer ) => {
+        convolver.buffer = buffer;
+      } );
 
     await fetch( './wavetables/m-talk.bin' )
       .then( ( res ) => res.arrayBuffer() )

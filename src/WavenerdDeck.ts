@@ -624,21 +624,16 @@ export class WavenerdDeck {
       time
     );
 
-    const [ outL, outR ] = await this.__renderer.render( first, count );
+    const outChannels = await this.__renderer.render( first, count );
 
-    bufferReaderNode.write(
-      0,
-      this.__bufferWriteBlocks,
-      first,
-      outL.subarray( first, first + count ),
-    );
-
-    bufferReaderNode.write(
-      1,
-      this.__bufferWriteBlocks,
-      first,
-      outR.subarray( first, first + count ),
-    );
+    outChannels.map( ( ch, i ) => {
+      bufferReaderNode.write(
+        i,
+        this.__bufferWriteBlocks,
+        first,
+        ch.subarray( first, first + count ),
+      );
+    } );
   }
 
   private __setCueStatus( cueStatus: 'none' | 'compiling' | 'ready' | 'applying' ): void {

@@ -2,6 +2,7 @@ import { shaderchunkPost, shaderchunkPre } from './shaderchunks';
 import { lazyProgram } from './utils/lazyProgram';
 
 const BLOCK_SIZE = 128;
+const CHANNELS = 4;
 
 export class Renderer {
   public readonly gl: WebGL2RenderingContext;
@@ -14,7 +15,7 @@ export class Renderer {
   }
 
   private __offsetBuffer: WebGLBuffer;
-  private __tfBuffers: [ WebGLBuffer, WebGLBuffer ];
+  private __tfBuffers: WebGLBuffer[];
   private __transformFeedback: WebGLTransformFeedback;
 
   private __program: WebGLProgram | null;
@@ -22,7 +23,7 @@ export class Renderer {
 
   private __textures: Map<string, WebGLTexture>;
 
-  private __dstArrays: [ Float32Array, Float32Array ];
+  private __dstArrays: Float32Array[];
 
   public constructor( gl: WebGL2RenderingContext, blocksPerRender: number ) {
     this.blocksPerRender = blocksPerRender;
@@ -32,16 +33,10 @@ export class Renderer {
     this.__extParallel = gl.getExtension( 'KHR_parallel_shader_compile' );
 
     this.__offsetBuffer = this.__createOffsetBuffer();
-    this.__tfBuffers = [
-      this.__createTFBuffer(),
-      this.__createTFBuffer(),
-    ];
+    this.__tfBuffers = [ ...Array( CHANNELS ) ].map( () => this.__createTFBuffer() );
     this.__transformFeedback = this.__createTransformFeedback( this.__tfBuffers );
 
-    this.__dstArrays = [
-      new Float32Array( this.framesPerRender ),
-      new Float32Array( this.framesPerRender ),
-    ];
+    this.__dstArrays = this.__tfBuffers.map( () => new Float32Array( this.framesPerRender ) );
 
     this.__program = null;
     this.__programCue = null;
@@ -81,7 +76,7 @@ export class Renderer {
       '#version 300 es\nvoid main(){discard;}',
       {
         extParallel: this.__extParallel,
-        tfVaryings: [ 'outL', 'outR' ],
+        tfVaryings: [ '_outL', '_outR', '_sendL', '_sendR' ],
       },
     ).catch( ( error ) => {
       this.__programCue = null;
@@ -244,14 +239,14 @@ export class Renderer {
   /**
    * Render and return a buffer.
    */
-  public async render( first: number, count: number ): Promise<[ Float32Array, Float32Array ]> {
+  public async render( first: number, count: number ): Promise<Float32Array[]> {
     const { gl, __program: program } = this;
     if ( program == null ) {
       return this.__dstArrays;
     }
 
     // attrib
-    const attribLocation = gl.getAttribLocation( program, 'off' );
+    const attribLocation = gl.getAttribLocation( program, '_off' );
 
     gl.bindBuffer( gl.ARRAY_BUFFER, this.__offsetBuffer );
     gl.enableVertexAttribArray( attribLocation );
@@ -271,25 +266,17 @@ export class Renderer {
     gl.useProgram( null );
 
     // feedback
-    gl.bindBuffer( gl.ARRAY_BUFFER, this.__tfBuffers[ 0 ] );
-    gl.getBufferSubData(
-      gl.ARRAY_BUFFER,
-      0,
-      this.__dstArrays[ 0 ],
-      first,
-      count,
-    );
-    gl.bindBuffer( gl.ARRAY_BUFFER, null );
-
-    gl.bindBuffer( gl.ARRAY_BUFFER, this.__tfBuffers[ 1 ] );
-    gl.getBufferSubData(
-      gl.ARRAY_BUFFER,
-      0,
-      this.__dstArrays[ 1 ],
-      first,
-      count,
-    );
-    gl.bindBuffer( gl.ARRAY_BUFFER, null );
+    this.__tfBuffers.map( ( buffer, i ) => {
+      gl.bindBuffer( gl.ARRAY_BUFFER, buffer );
+      gl.getBufferSubData(
+        gl.ARRAY_BUFFER,
+        0,
+        this.__dstArrays[ i ],
+        first,
+        count,
+      );
+      gl.bindBuffer( gl.ARRAY_BUFFER, null );
+    } );
 
     return this.__dstArrays;
   }
@@ -326,15 +313,16 @@ export class Renderer {
   }
 
   private __createTransformFeedback(
-    tfBuffers: [ WebGLBuffer, WebGLBuffer ]
+    tfBuffers: WebGLBuffer[],
   ): WebGLTransformFeedback {
     const { gl } = this;
 
     const tf = gl.createTransformFeedback()!;
 
     gl.bindTransformFeedback( gl.TRANSFORM_FEEDBACK, tf );
-    gl.bindBufferBase( gl.TRANSFORM_FEEDBACK_BUFFER, 0, tfBuffers[ 0 ] );
-    gl.bindBufferBase( gl.TRANSFORM_FEEDBACK_BUFFER, 1, tfBuffers[ 1 ] );
+    tfBuffers.map( ( buffer, i ) => {
+      gl.bindBufferBase( gl.TRANSFORM_FEEDBACK_BUFFER, i, buffer );
+    } );
     gl.bindTransformFeedback( gl.TRANSFORM_FEEDBACK, null );
 
     return tf;

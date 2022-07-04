@@ -10,13 +10,18 @@ uniform float sampleRate;
 uniform float _deltaSample;
 uniform vec4 _timeHead;
 
-in float off;
+in float _off;
 
-out float outL;
-out float outR;
+out float _outL;
+out float _outR;
+out float _sendL;
+out float _sendR;
+
+vec2 outMain;
+vec2 outSend;
 
 float paramFetch( vec4 param ) {
-  return mix( param.x, param.y, exp( -param.z * off * _deltaSample ) );
+  return mix( param.x, param.y, exp( -param.z * _off * _deltaSample ) );
 }
 
 float wavetableNearest( sampler2D w, vec4 meta, vec2 position ) {
@@ -82,7 +87,13 @@ vec2 sampleSinc( sampler2D s, vec4 meta, float time ) {
 export const shaderchunkPreLines = shaderchunkPre.split( '\n' ).length;
 
 export const shaderchunkPost = `void main() {
-  vec2 out2 = mainAudio( mod( _timeHead + off * _deltaSample, timeLength ) );
-  outL = out2.x;
-  outR = out2.y;
+  outMain = vec2( 0.0 );
+  outSend = vec2( 0.0 );
+
+  outMain += mainAudio( mod( _timeHead + _off * _deltaSample, timeLength ) );
+
+  _outL = outMain.x;
+  _outR = outMain.y;
+  _sendL = outSend.x;
+  _sendR = outSend.y;
 }`;

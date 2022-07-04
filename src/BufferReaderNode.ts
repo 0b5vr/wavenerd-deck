@@ -1,7 +1,7 @@
 import processorCode from './BufferReaderProcessor.worklet.js';
 
 const BLOCK_SIZE = 128;
-const CHANNELS = 2;
+const CHANNELS = 4;
 const BUFFER_SIZE_PER_CHANNEL = 65536;
 
 const processorBlob = new Blob( [ processorCode ], { type: 'text/javascript' } );
