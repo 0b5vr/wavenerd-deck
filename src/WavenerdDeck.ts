@@ -42,6 +42,13 @@ export class WavenerdDeck {
    * `'applying'`: There is a cue shader and is going to be applied in the next bar.
    */
   private __cueStatus: 'none' | 'compiling' | 'ready' | 'applying' = 'none';
+
+  /**
+   * Its current cue status.
+   * `'none'`: There is nothing in its current cue.
+   * `'ready'`: There is a cue shader and is ready to be applied.
+   * `'applying'`: There is a cue shader and is going to be applied in the next bar.
+   */
   public get cueStatus(): 'none' | 'compiling' | 'ready' | 'applying' {
     return this.__cueStatus;
   }
@@ -50,6 +57,10 @@ export class WavenerdDeck {
    * Blocks per a render.
    */
   private __blocksPerRender: number;
+
+  /**
+   * Blocks per a render.
+   */
   public get blocksPerRender(): number {
     return this.__blocksPerRender;
   }
@@ -59,6 +70,18 @@ export class WavenerdDeck {
    */
   public get framesPerRender(): number {
     return BLOCK_SIZE * this.__blocksPerRender;
+  }
+
+  /**
+   * Whether the wavenerd deck is playing or not.
+   */
+  private __isPlaying: boolean;
+
+  /**
+   * Whether the wavenerd deck is playing or not.
+   */
+  public get isPlaying(): boolean {
+    return this.hostDeck?.__isPlaying ?? this.__isPlaying;
   }
 
   /**
@@ -110,6 +133,12 @@ export class WavenerdDeck {
   private __bufferWriteBlocks: number;
 
   /**
+   * Offset of the block compared to {@link __bufferWriteBlocks} in terms of time.
+   * It is used to rewind the deck.
+   */
+  private __blockOffset: number;
+
+  /**
    * Alias for the `audio.sampleRate` .
    */
   public get sampleRate(): number {
@@ -128,7 +157,7 @@ export class WavenerdDeck {
 
   private __program: WavenerdDeckProgram | null;
   private __programCue: WavenerdDeckProgram | null;
-  private __programSwapTime: number;
+  private __programSwapTime: number | null;
 
   private __params = new Map<string, WavenerdDeckParamEntry>();
   private get params(): Map<string, WavenerdDeckParamEntry> {
@@ -162,6 +191,8 @@ export class WavenerdDeck {
     blocksPerRender?: number;
     bpm?: number;
   } ) {
+    this.__isPlaying = false;
+
     this.latencyBlocks = latencyBlocks ?? 16;
     this.__blocksPerRender = blocksPerRender ?? 16;
 
@@ -186,7 +217,7 @@ export class WavenerdDeck {
 
     this.__program = null;
     this.__programCue = null;
-    this.__programSwapTime = 0.0;
+    this.__programSwapTime = null;
 
     // -- audio ------------------------------------------------------------------------------------
     this.__audio = audio;
@@ -198,6 +229,7 @@ export class WavenerdDeck {
     } );
 
     this.__bufferWriteBlocks = 0;
+    this.__blockOffset = 0;
   }
 
   /**
@@ -210,6 +242,36 @@ export class WavenerdDeck {
     this.__selfTextureStore.dispose();
 
     this.__bufferReaderNode?.disconnect();
+  }
+
+  /**
+   * Play the deck.
+   */
+  public play(): void {
+    this.__isPlaying = true;
+
+    this.__emit( 'play' );
+  }
+
+  /**
+   * Pause the deck.
+   */
+  public pause(): void {
+    this.__isPlaying = false;
+
+    this.__emit( 'pause' );
+  }
+
+  /**
+   * Rewind the deck.
+   */
+  public rewind(): void {
+    this.__lastUpdatedTime = 0.0;
+    this.__blockOffset = this.__bufferWriteBlocks;
+
+    this.__beatManager.reset();
+
+    this.applyCueImmediately();
   }
 
   /**
@@ -259,6 +321,21 @@ export class WavenerdDeck {
 
       this.__programSwapTime =
         this.beatManager.time - this.beatManager.bar + this.beatManager.barSeconds;
+    }
+  }
+
+  /**
+   * Apply the cue shader immediately.
+   */
+  public applyCueImmediately(): void {
+    if ( this.__programCue != null ) {
+      this.__setCueStatus( 'none' );
+
+      this.__renderer.applyCue();
+
+      this.__program = this.__programCue;
+      this.__programCue = null;
+      this.__programSwapTime = null;
     }
   }
 
@@ -362,6 +439,12 @@ export class WavenerdDeck {
     const { readBlocks } = bufferReaderNode;
     const { sampleRate, blocksPerRender, framesPerRender } = this;
 
+    this.__bufferReaderNode?.setActive( this.isPlaying );
+
+    // -- early abort? -----------------------------------------------------------------------------
+    if ( !this.isPlaying ) { return; }
+
+    // -- choose a right write block ---------------------------------------------------------------
     const blockAhead = this.__bufferWriteBlocks - readBlocks;
 
     // we don't have to render this time
@@ -376,45 +459,38 @@ export class WavenerdDeck {
       ) * blocksPerRender;
     }
 
-    const genTime = BLOCK_SIZE * this.__bufferWriteBlocks / sampleRate;
+    const genTime = BLOCK_SIZE * ( this.__bufferWriteBlocks - this.__blockOffset ) / sampleRate;
     this.beatManager.update( genTime );
 
-    // should I process the next program?
-    let beginNext = this.__cueStatus === 'applying'
+    // -- should I process the next program? -------------------------------------------------------
+    let beginNext = this.__programSwapTime != null
       ? Math.floor( ( this.__programSwapTime - genTime ) * sampleRate )
       : Infinity;
     beginNext = Math.min( beginNext, framesPerRender );
 
+    // -- swap the program from first --------------------------------------------------------------
     if ( beginNext < 0 ) {
-      this.__setCueStatus( 'none' );
-
-      this.__renderer.applyCue();
-
-      this.__program = this.__programCue;
-      this.__programCue = null;
+      this.applyCueImmediately();
 
       beginNext = framesPerRender;
     }
 
+    // -- render -----------------------------------------------------------------------------------
     if ( this.__program ) {
       await this.__prepareBuffer( 0, beginNext );
     }
 
-    // process the next program??
+    // -- render the next program from the mid of the block ----------------------------------------
     if ( beginNext < framesPerRender && this.__programCue != null ) {
-      this.__setCueStatus( 'none' );
-
-      this.__renderer.applyCue();
-
-      this.__program = this.__programCue;
-      this.__programCue = null;
+      this.applyCueImmediately();
 
       await this.__prepareBuffer( beginNext, framesPerRender - beginNext );
     }
 
+    // -- update write blocks ----------------------------------------------------------------------
     this.__bufferWriteBlocks += this.blocksPerRender;
 
-    // emit an event
+    // -- emit an event ----------------------------------------------------------------------------
     this.__emit( 'update' );
   }
 
@@ -556,6 +632,8 @@ export class WavenerdDeck {
 
 export interface WavenerdDeck extends EventEmittable<{
   update: void;
+  play: void;
+  pause: void;
   changeCueStatus: { cueStatus: 'none' | 'compiling' | 'ready' | 'applying' };
   setParam: { name: string; value: number; factor: number };
   loadWavetable: { name: string };
