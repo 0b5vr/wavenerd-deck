@@ -20,8 +20,6 @@ export class Renderer {
   private __program: WebGLProgram | null;
   private __programCue: WebGLProgram | null;
 
-  private __textures: Map<string, WebGLTexture>;
-
   private __dstArrays: [ Float32Array, Float32Array ];
 
   public constructor( gl: WebGL2RenderingContext, blocksPerRender: number ) {
@@ -45,8 +43,6 @@ export class Renderer {
 
     this.__program = null;
     this.__programCue = null;
-
-    this.__textures = new Map();
   }
 
   /**
@@ -63,10 +59,6 @@ export class Renderer {
 
     gl.deleteProgram( this.__program );
     gl.deleteProgram( this.__programCue );
-
-    this.__textures.forEach( ( texture ) => {
-      gl.deleteTexture( texture );
-    } );
   }
 
   /**
@@ -116,84 +108,6 @@ export class Renderer {
   }
 
   /**
-   * Create a texture and upload data.
-   */
-  public uploadTexture(
-    textureName: string,
-    width: number,
-    height: number,
-    source: Float32Array,
-  ): void {
-    const { gl } = this;
-
-    const texture = gl.createTexture()!;
-
-    gl.bindTexture( gl.TEXTURE_2D, texture );
-
-    gl.texImage2D(
-      gl.TEXTURE_2D,
-      0,
-      gl.RGBA32F,
-      width,
-      height,
-      0,
-      gl.RGBA,
-      gl.FLOAT,
-      source,
-    );
-
-    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST );
-    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST );
-
-    gl.bindTexture( gl.TEXTURE_2D, null );
-
-    this.__textures.set( textureName, texture );
-  }
-
-  /**
-   * Create a texture and upload data.
-   */
-  public uploadImageSource(
-    textureName: string,
-    source: TexImageSource,
-  ): void {
-    const { gl } = this;
-
-    const texture = gl.createTexture()!;
-
-    gl.bindTexture( gl.TEXTURE_2D, texture );
-
-    gl.texImage2D(
-      gl.TEXTURE_2D,
-      0,
-      gl.RGBA8,
-      gl.RGBA,
-      gl.UNSIGNED_BYTE,
-      source,
-    );
-
-    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR );
-    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR );
-
-    gl.bindTexture( gl.TEXTURE_2D, null );
-
-    this.__textures.set( textureName, texture );
-  }
-
-  /**
-   * Delete a texture entry.
-   */
-  public deleteTexture( textureName: string ): void {
-    const { gl } = this;
-
-    const texture = this.__textures.get( textureName );
-    if ( texture == null ) { return; }
-
-    gl.deleteTexture( texture );
-    this.__textures.delete( textureName );
-  }
-
-  /**
    * Set an uniform1f to the current program.
    */
   public uniform1f( name: string, value: number ): void {
@@ -224,12 +138,9 @@ export class Renderer {
   /**
    * Set a texture uniform to the current program.
    */
-  public uniformTexture( name: string, unit: number ): void {
+  public uniformTexture( name: string, unit: number, texture: WebGLTexture ): void {
     const { gl, __program: program } = this;
     if ( program == null ) { return; }
-
-    const texture = this.__textures.get( name );
-    if ( texture == null ) { return; }
 
     const location = gl.getUniformLocation( program, name );
 
