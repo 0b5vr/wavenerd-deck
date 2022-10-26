@@ -2,6 +2,7 @@ import { BeatManager } from './BeatManager';
 import { BufferReaderNode } from './BufferReaderNode';
 import { EventEmittable } from './utils/EventEmittable';
 import { Renderer } from './Renderer';
+import { TextureStore } from './TextureStore';
 import { applyMixins } from './utils/applyMixins';
 import { lerp } from './utils/lerp';
 import { shaderchunkPreLines } from './shaderchunks';
@@ -19,34 +20,6 @@ interface WavenerdDeckParamEntry {
   factor: number;
   target: number;
 }
-
-interface WavenerdDeckSampleEntry {
-  type: 'sample';
-  name: string;
-  width: number;
-  height: number;
-  sampleRate: number;
-  duration: number;
-}
-
-interface WavenerdDeckWavetableEntry {
-  type: 'wavetable';
-  name: string;
-  width: number;
-  height: number;
-}
-
-interface WavenerdDeckImageEntry {
-  type: 'image';
-  name: string;
-  width: number;
-  height: number;
-}
-
-type WavenerdDeckTextureEntry =
-  | WavenerdDeckSampleEntry
-  | WavenerdDeckWavetableEntry
-  | WavenerdDeckImageEntry;
 
 export class WavenerdDeck {
   /**
@@ -162,13 +135,13 @@ export class WavenerdDeck {
     return this.__params;
   }
 
-  private __textures = new Map<string, WavenerdDeckTextureEntry>();
-  private get textures(): Map<string, WavenerdDeckTextureEntry> {
+  private __selfTextureStore: TextureStore;
+  private get __textureStore(): TextureStore {
     if ( this.hostDeck ) {
-      return this.hostDeck.textures;
+      return this.hostDeck.__textureStore;
     }
 
-    return this.__textures;
+    return this.__selfTextureStore;
   }
 
   /**
@@ -209,6 +182,8 @@ export class WavenerdDeck {
     // -- renderer ---------------------------------------------------------------------------------
     this.__renderer = new Renderer( gl, this.blocksPerRender );
 
+    this.__selfTextureStore = new TextureStore( gl );
+
     this.__program = null;
     this.__programCue = null;
     this.__programSwapTime = 0.0;
@@ -232,6 +207,7 @@ export class WavenerdDeck {
     this.__setCueStatus( 'none' );
 
     this.__renderer.dispose();
+    this.__selfTextureStore.dispose();
 
     this.__bufferReaderNode?.disconnect();
   }
@@ -257,10 +233,9 @@ export class WavenerdDeck {
 
     const requiredTextures = new Set<string>();
 
-    for ( const texture of this.textures.values() ) {
-      const textureName = `${ texture.type }_${ texture.name }`;
-      if ( code.search( textureName ) !== -1 ) {
-        requiredTextures.add( textureName );
+    for ( const id of this.__textureStore.textureIds ) {
+      if ( code.search( id ) !== -1 ) {
+        requiredTextures.add( id );
       }
     }
 
@@ -306,38 +281,14 @@ export class WavenerdDeck {
    * Load a x-y wavetable and store as a uniform texture.
    * The buffer have to be encoded in F32, 2048 samples per cycle.
    */
-  public async loadWavetable(
+  public loadWavetable(
     name: string,
     inputBuffer: Float32Array,
-  ): Promise<void> {
-    const frames = inputBuffer.length / 2048;
-    const buffer = new Float32Array( inputBuffer.length * 4 );
+  ): void {
+    const id = `wavetable_${ name }`;
+    this.__textureStore.loadWavetable( id, inputBuffer );
 
-    for ( let i = 0; i < inputBuffer.length; i ++ ) {
-      buffer[ i * 4 + 0 ] = inputBuffer[ i ];
-    }
-
-    const textureName = `wavetable_${ name }`;
-
-    this.__renderer.uploadTexture( textureName, 2048, frames, buffer );
-
-    this.textures.set(
-      textureName,
-      {
-        type: 'wavetable',
-        name,
-        width: 2048,
-        height: frames,
-      }
-    );
-
-    if ( this.__program && this.__program.code.search( textureName ) ) {
-      this.__program.requiredTextures.add( name );
-    }
-
-    if ( this.__programCue && this.__programCue.code.search( textureName ) ) {
-      this.__programCue.requiredTextures.add( name );
-    }
+    this.__addRequiredTexture( id );
 
     this.__emit( 'loadWavetable', { name } );
   }
@@ -346,13 +297,9 @@ export class WavenerdDeck {
    * Delete a wavetable.
    */
   public deleteWavetable( name: string ): void {
-    const textureName = `wavetable_${ name }`;
+    const isSuccess = this.__textureStore.delete( `wavetable_${ name }` );
 
-    if ( this.textures.has( textureName ) ) {
-      this.textures.delete( textureName );
-
-      this.__renderer.deleteTexture( textureName );
-
+    if ( isSuccess ) {
       this.__emit( 'deleteWavetable', { name } );
     }
   }
@@ -360,31 +307,14 @@ export class WavenerdDeck {
   /**
    * Load an image and store as a uniform texture.
    */
-  public async loadImage(
+  public loadImage(
     name: string,
     image: TexImageSource,
-  ): Promise<void> {
-    const textureName = `image_${ name }`;
+  ): void {
+    const id = `image_${ name }`;
+    this.__textureStore.loadImage( id, image );
 
-    this.__renderer.uploadImageSource( textureName, image );
-
-    this.textures.set(
-      textureName,
-      {
-        type: 'image',
-        name,
-        width: image.width,
-        height: image.height,
-      }
-    );
-
-    if ( this.__program && this.__program.code.search( textureName ) ) {
-      this.__program.requiredTextures.add( name );
-    }
-
-    if ( this.__programCue && this.__programCue.code.search( textureName ) ) {
-      this.__programCue.requiredTextures.add( name );
-    }
+    this.__addRequiredTexture( id );
 
     this.__emit( 'loadImage', { name } );
   }
@@ -393,13 +323,9 @@ export class WavenerdDeck {
    * Delete an image.
    */
   public deleteImage( name: string ): void {
-    const textureName = `image_${ name }`;
+    const isSuccess = this.__textureStore.delete( `image_${ name }` );
 
-    if ( this.textures.has( textureName ) ) {
-      this.textures.delete( textureName );
-
-      this.__renderer.deleteTexture( textureName );
-
+    if ( isSuccess ) {
       this.__emit( 'deleteImage', { name } );
     }
   }
@@ -410,46 +336,10 @@ export class WavenerdDeck {
   public async loadSample( name: string, inputBuffer: ArrayBuffer ): Promise<void> {
     const audioBuffer = await this.__audio.decodeAudioData( inputBuffer );
 
-    const { sampleRate, duration } = audioBuffer;
-    const frames = audioBuffer.length;
-    const width = 2048;
-    const lengthCeiled = Math.ceil( frames / 2048.0 );
-    const height = lengthCeiled;
+    const id = `sample_${ name }`;
+    const { duration, sampleRate } = this.__textureStore.loadSample( id, audioBuffer );
 
-    const buffer = new Float32Array( width * height * 4 );
-    const channels = audioBuffer.numberOfChannels;
-
-    const dataL = audioBuffer.getChannelData( 0 );
-    const dataR = audioBuffer.getChannelData( channels === 1 ? 0 : 1 );
-
-    for ( let i = 0; i < frames; i ++ ) {
-      buffer[ i * 4 + 0 ] = dataL[ i ];
-      buffer[ i * 4 + 1 ] = dataR[ i ];
-    }
-
-    const textureName = `sample_${ name }`;
-
-    this.__renderer.uploadTexture( textureName, width, height, buffer );
-
-    this.textures.set(
-      textureName,
-      {
-        type: 'sample',
-        name,
-        width,
-        height,
-        sampleRate,
-        duration
-      }
-    );
-
-    if ( this.__program && this.__program.code.search( textureName ) ) {
-      this.__program.requiredTextures.add( name );
-    }
-
-    if ( this.__programCue && this.__programCue.code.search( textureName ) ) {
-      this.__programCue.requiredTextures.add( name );
-    }
+    this.__addRequiredTexture( id );
 
     this.__emit( 'loadSample', { name, duration, sampleRate } );
   }
@@ -458,13 +348,9 @@ export class WavenerdDeck {
    * Delete a sample.
    */
   public deleteSample( name: string ): void {
-    const textureName = `sample_${ name }`;
+    const isSuccess = this.__textureStore.delete( `success_${ name }` );
 
-    if ( this.textures.has( textureName ) ) {
-      this.textures.delete( textureName );
-
-      this.__renderer.deleteTexture( textureName );
-
+    if ( isSuccess ) {
       this.__emit( 'deleteSample', { name } );
     }
   }
@@ -532,6 +418,16 @@ export class WavenerdDeck {
     this.__emit( 'update' );
   }
 
+  private __addRequiredTexture( id: string ): void {
+    if ( this.__program && this.__program.code.search( id ) ) {
+      this.__program.requiredTextures.add( id );
+    }
+
+    if ( this.__programCue && this.__programCue.code.search( id ) ) {
+      this.__programCue.requiredTextures.add( id );
+    }
+  }
+
   private async __prepareBuffer(
     first: number,
     count: number
@@ -575,26 +471,27 @@ export class WavenerdDeck {
     const { requiredTextures } = this.__program!;
 
     for ( const textureName of requiredTextures ) {
-      const texture = this.textures.get( textureName );
+      const textureEntry = this.__textureStore.get( textureName );
 
-      if ( texture != null ) {
+      if ( textureEntry != null ) {
         this.__renderer.uniformTexture(
           textureName,
           textureUnit,
+          textureEntry.texture,
         );
         textureUnit ++;
 
         const meta = (
-          texture.type === 'sample'
+          textureEntry.type === 'sample'
             ? [
-              texture.width,
-              texture.height,
-              texture.sampleRate,
-              texture.duration,
+              textureEntry.width,
+              textureEntry.height,
+              textureEntry.sampleRate,
+              textureEntry.duration,
             ]
             : [
-              texture.width,
-              texture.height,
+              textureEntry.width,
+              textureEntry.height,
               0,
               0,
             ]
