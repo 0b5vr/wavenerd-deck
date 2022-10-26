@@ -18,6 +18,10 @@ export class BufferReaderNode extends AudioWorkletNode {
     return audio.audioWorklet.addModule( processorUrl );
   }
 
+  public setActive( isActive: boolean ): void {
+    this.port.postMessage( isActive );
+  }
+
   public constructor( audio: AudioContext ) {
     super( audio, 'buffer-reader-processor', {
       numberOfInputs: 0,
