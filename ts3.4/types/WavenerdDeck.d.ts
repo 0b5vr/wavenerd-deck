@@ -19,16 +19,33 @@ export declare class WavenerdDeck {
      * `'applying'`: There is a cue shader and is going to be applied in the next bar.
      */
     private __cueStatus;
+    /*
+    * Its current cue status.
+    * `'none'`: There is nothing in its current cue.
+    * `'ready'`: There is a cue shader and is ready to be applied.
+    * `'applying'`: There is a cue shader and is going to be applied in the next bar.
+    */
     readonly cueStatus: 'none' | 'compiling' | 'ready' | 'applying';
     /**
      * Blocks per a render.
      */
     private __blocksPerRender;
+    /*
+    * Blocks per a render.
+    */
     readonly blocksPerRender: number;
     /*
     * Frames per a render
     */
     readonly framesPerRender: number;
+    /**
+     * Whether the wavenerd deck is playing or not.
+     */
+    private __isPlaying;
+    /*
+    * Whether the wavenerd deck is playing or not.
+    */
+    readonly isPlaying: boolean;
     /*
     * Its current bpm.
     */
@@ -59,6 +76,11 @@ export declare class WavenerdDeck {
     readonly node: GainNode;
     private __bufferReaderNode?;
     private __bufferWriteBlocks;
+    /**
+     * Offset of the block compared to {@link __bufferWriteBlocks} in terms of time.
+     * It is used to rewind the deck.
+     */
+    private __blockOffset;
     /*
     * Alias for the `audio.sampleRate` .
     */
@@ -70,8 +92,8 @@ export declare class WavenerdDeck {
     private __programSwapTime;
     private __params;
     private readonly params: any;
-    private __textures;
-    private readonly textures: any;
+    private __selfTextureStore;
+    private readonly __textureStore: any;
     /**
      * Constructor of the WavenerdDeck.
      */
@@ -88,6 +110,18 @@ export declare class WavenerdDeck {
      */
     dispose(): void;
     /**
+     * Play the deck.
+     */
+    play(): void;
+    /**
+     * Pause the deck.
+     */
+    pause(): void;
+    /**
+     * Rewind the deck.
+     */
+    rewind(): void;
+    /**
      * Compile given shader code and cue the shader.
      */
     compile(code: string): Promise<void>;
@@ -96,6 +130,10 @@ export declare class WavenerdDeck {
      */
     applyCue(): void;
     /**
+     * Apply the cue shader immediately.
+     */
+    applyCueImmediately(): void;
+    /**
      * Set a uniform value.
      */
     setParam(name: string, value: number, factor?: number): void;
@@ -103,7 +141,7 @@ export declare class WavenerdDeck {
      * Load a x-y wavetable and store as a uniform texture.
      * The buffer have to be encoded in F32, 2048 samples per cycle.
      */
-    loadWavetable(name: string, inputBuffer: Float32Array): Promise<void>;
+    loadWavetable(name: string, inputBuffer: Float32Array): void;
     /**
      * Delete a wavetable.
      */
@@ -111,7 +149,7 @@ export declare class WavenerdDeck {
     /**
      * Load an image and store as a uniform texture.
      */
-    loadImage(name: string, image: TexImageSource): Promise<void>;
+    loadImage(name: string, image: TexImageSource): void;
     /**
      * Delete an image.
      */
@@ -125,12 +163,16 @@ export declare class WavenerdDeck {
      */
     deleteSample(name: string): void;
     update(): Promise<void>;
+    private __addRequiredTexture;
     private __prepareBuffer;
     private __setCueStatus;
     private __processErrorMessage;
 }
 export interface WavenerdDeck extends EventEmittable<{
     update: void;
+    play: void;
+    pause: void;
+    rewind: void;
     changeCueStatus: {
         cueStatus: 'none' | 'compiling' | 'ready' | 'applying';
     };

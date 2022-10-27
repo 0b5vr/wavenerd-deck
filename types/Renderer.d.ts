@@ -8,7 +8,6 @@ export declare class Renderer {
     private __transformFeedback;
     private __program;
     private __programCue;
-    private __textures;
     private __dstArrays;
     constructor(gl: WebGL2RenderingContext, blocksPerRender: number);
     /**
@@ -27,18 +26,6 @@ export declare class Renderer {
      */
     applyCue(): void;
     /**
-     * Create a texture and upload data.
-     */
-    uploadTexture(textureName: string, width: number, height: number, source: Float32Array): void;
-    /**
-     * Create a texture and upload data.
-     */
-    uploadImageSource(textureName: string, source: TexImageSource): void;
-    /**
-     * Delete a texture entry.
-     */
-    deleteTexture(textureName: string): void;
-    /**
      * Set an uniform1f to the current program.
      */
     uniform1f(name: string, value: number): void;
@@ -49,7 +36,7 @@ export declare class Renderer {
     /**
      * Set a texture uniform to the current program.
      */
-    uniformTexture(name: string, unit: number): void;
+    uniformTexture(name: string, unit: number, texture: WebGLTexture): void;
     /**
      * Render and return a buffer.
      */

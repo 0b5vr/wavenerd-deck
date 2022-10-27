@@ -1,5 +1,5 @@
 /*!
-* @0b5vr/wavenerd-deck v0.5.4
+* @0b5vr/wavenerd-deck v0.5.5
 * a
 *
 * Copyright (c) 2020-2022 0b5vr
@@ -181,7 +181,7 @@ var WAVENERD_DECK = (() => {
   applyMixins(BeatManager, [EventEmittable]);
 
   // src/BufferReaderProcessor.worklet.js
-  var BufferReaderProcessor_worklet_default = "/* eslint-disable */\n\nconst BLOCK_SIZE = 128;\nconst CHANNELS = 2;\nconst BUFFER_SIZE_PER_CHANNEL = 65536;\n\nclass BufferReaderProcessor extends AudioWorkletProcessor {\n  constructor() {\n    super();\n\n    this.blocks = 0;\n    this.buffer = new Float32Array( CHANNELS * BUFFER_SIZE_PER_CHANNEL );\n\n    this.port.onmessage = ( { data } ) => {\n      this.buffer.set( ...data );\n    };\n  }\n\n  process( inputs, outputs, parameters ) {\n    const buffer = this.buffer;\n    if ( buffer == null ) { return true; }\n\n    const head = ( BLOCK_SIZE * this.blocks ) % BUFFER_SIZE_PER_CHANNEL;\n\n    outputs[ 0 ].forEach( ( ch, iCh ) => {\n      const chHead = BUFFER_SIZE_PER_CHANNEL * iCh + head;\n      ch.set( buffer.subarray( chHead, chHead + BLOCK_SIZE ) );\n    } );\n\n    this.blocks ++;\n\n    this.port.postMessage( this.blocks );\n\n    return true;\n  }\n}\n\nregisterProcessor( 'buffer-reader-processor', BufferReaderProcessor );\n";
+  var BufferReaderProcessor_worklet_default = "/* eslint-disable */\n\nconst BLOCK_SIZE = 128;\nconst CHANNELS = 2;\nconst BUFFER_SIZE_PER_CHANNEL = 65536;\n\nclass BufferReaderProcessor extends AudioWorkletProcessor {\n  constructor() {\n    super();\n\n    this.active = false;\n    this.blocks = 0;\n    this.buffer = new Float32Array( CHANNELS * BUFFER_SIZE_PER_CHANNEL );\n\n    this.port.onmessage = ( { data } ) => {\n      if ( Array.isArray( data ) ) {\n        this.buffer.set( ...data );\n      } else {\n        this.active = data;\n      }\n    };\n  }\n\n  process( inputs, outputs, parameters ) {\n    if ( !this.active ) { return true; }\n\n    const buffer = this.buffer;\n\n    const head = ( BLOCK_SIZE * this.blocks ) % BUFFER_SIZE_PER_CHANNEL;\n\n    outputs[ 0 ].forEach( ( ch, iCh ) => {\n      const chHead = BUFFER_SIZE_PER_CHANNEL * iCh + head;\n      ch.set( buffer.subarray( chHead, chHead + BLOCK_SIZE ) );\n    } );\n\n    this.blocks ++;\n\n    this.port.postMessage( this.blocks );\n\n    return true;\n  }\n}\n\nregisterProcessor( 'buffer-reader-processor', BufferReaderProcessor );\n";
 
   // src/BufferReaderNode.ts
   var BLOCK_SIZE = 128;
@@ -207,6 +207,9 @@ var WAVENERD_DECK = (() => {
     }
     static addModule(audio) {
       return audio.audioWorklet.addModule(processorUrl);
+    }
+    setActive(isActive) {
+      this.port.postMessage(isActive);
     }
     write(channel, block, offset, buffer) {
       const totalOffset = BUFFER_SIZE_PER_CHANNEL * channel + BLOCK_SIZE * block % BUFFER_SIZE_PER_CHANNEL + offset;
@@ -366,7 +369,6 @@ vec2 sampleSinc( sampler2D s, vec4 meta, float time ) {
       __publicField(this, "__transformFeedback");
       __publicField(this, "__program");
       __publicField(this, "__programCue");
-      __publicField(this, "__textures");
       __publicField(this, "__dstArrays");
       this.blocksPerRender = blocksPerRender;
       this.gl = gl;
@@ -383,7 +385,6 @@ vec2 sampleSinc( sampler2D s, vec4 meta, float time ) {
       ];
       this.__program = null;
       this.__programCue = null;
-      this.__textures = /* @__PURE__ */ new Map();
     }
     get framesPerRender() {
       return BLOCK_SIZE2 * this.blocksPerRender;
@@ -396,9 +397,6 @@ vec2 sampleSinc( sampler2D s, vec4 meta, float time ) {
       gl.deleteTransformFeedback(this.__transformFeedback);
       gl.deleteProgram(this.__program);
       gl.deleteProgram(this.__programCue);
-      this.__textures.forEach((texture) => {
-        gl.deleteTexture(texture);
-      });
     }
     compile(code) {
       return __async(this, null, function* () {
@@ -429,35 +427,6 @@ vec2 sampleSinc( sampler2D s, vec4 meta, float time ) {
       }
       this.__programCue = null;
     }
-    uploadTexture(textureName, width, height, source) {
-      const { gl } = this;
-      const texture = gl.createTexture();
-      gl.bindTexture(gl.TEXTURE_2D, texture);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, height, 0, gl.RGBA, gl.FLOAT, source);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-      gl.bindTexture(gl.TEXTURE_2D, null);
-      this.__textures.set(textureName, texture);
-    }
-    uploadImageSource(textureName, source) {
-      const { gl } = this;
-      const texture = gl.createTexture();
-      gl.bindTexture(gl.TEXTURE_2D, texture);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, source);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      gl.bindTexture(gl.TEXTURE_2D, null);
-      this.__textures.set(textureName, texture);
-    }
-    deleteTexture(textureName) {
-      const { gl } = this;
-      const texture = this.__textures.get(textureName);
-      if (texture == null) {
-        return;
-      }
-      gl.deleteTexture(texture);
-      this.__textures.delete(textureName);
-    }
     uniform1f(name, value) {
       const { gl, __program: program } = this;
       if (program == null) {
@@ -478,13 +447,9 @@ vec2 sampleSinc( sampler2D s, vec4 meta, float time ) {
       gl.uniform4f(location, ...value);
       gl.useProgram(null);
     }
-    uniformTexture(name, unit) {
+    uniformTexture(name, unit, texture) {
       const { gl, __program: program } = this;
       if (program == null) {
-        return;
-      }
-      const texture = this.__textures.get(name);
-      if (texture == null) {
         return;
       }
       const location = gl.getUniformLocation(program, name);
@@ -550,6 +515,113 @@ vec2 sampleSinc( sampler2D s, vec4 meta, float time ) {
     }
   };
 
+  // src/TextureStore.ts
+  var TextureStore = class {
+    constructor(gl) {
+      __publicField(this, "gl");
+      __publicField(this, "__textures");
+      this.gl = gl;
+      this.__textures = /* @__PURE__ */ new Map();
+    }
+    get textureIds() {
+      return this.__textures.keys();
+    }
+    dispose() {
+      const { gl } = this;
+      this.__textures.forEach((texture) => {
+        gl.deleteTexture(texture.texture);
+      });
+      this.__textures.clear();
+    }
+    get(id) {
+      var _a;
+      return (_a = this.__textures.get(id)) != null ? _a : null;
+    }
+    loadWavetable(id, inputBuffer) {
+      const frames = inputBuffer.length / 2048;
+      const buffer = new Float32Array(inputBuffer.length * 4);
+      for (let i = 0; i < inputBuffer.length; i++) {
+        buffer[i * 4 + 0] = inputBuffer[i];
+      }
+      const texture = this.__uploadTexture(2048, frames, buffer);
+      const entry = {
+        type: "wavetable",
+        width: 2048,
+        height: frames,
+        texture
+      };
+      this.__textures.set(id, entry);
+      return entry;
+    }
+    loadImage(id, image) {
+      const texture = this.__uploadImageSource(image);
+      const entry = {
+        type: "image",
+        width: image.width,
+        height: image.height,
+        texture
+      };
+      this.__textures.set(id, entry);
+      return entry;
+    }
+    loadSample(id, audioBuffer) {
+      const { sampleRate, duration } = audioBuffer;
+      const frames = audioBuffer.length;
+      const width = 2048;
+      const lengthCeiled = Math.ceil(frames / 2048);
+      const height = lengthCeiled;
+      const buffer = new Float32Array(width * height * 4);
+      const channels = audioBuffer.numberOfChannels;
+      const dataL = audioBuffer.getChannelData(0);
+      const dataR = audioBuffer.getChannelData(channels === 1 ? 0 : 1);
+      for (let i = 0; i < frames; i++) {
+        buffer[i * 4 + 0] = dataL[i];
+        buffer[i * 4 + 1] = dataR[i];
+      }
+      const texture = this.__uploadTexture(width, height, buffer);
+      const entry = {
+        type: "sample",
+        width,
+        height,
+        sampleRate,
+        duration,
+        texture
+      };
+      this.__textures.set(id, entry);
+      return entry;
+    }
+    delete(id) {
+      const { gl } = this;
+      const texture = this.__textures.get(id);
+      if (texture == null) {
+        return false;
+      }
+      gl.deleteTexture(texture.texture);
+      this.__textures.delete(id);
+      return true;
+    }
+    __uploadTexture(width, height, source) {
+      const { gl } = this;
+      const texture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, height, 0, gl.RGBA, gl.FLOAT, source);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      return texture;
+    }
+    __uploadImageSource(source) {
+      const { gl } = this;
+      const texture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, source);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      return texture;
+    }
+  };
+
   // src/utils/lerp.ts
   function lerp(a, b, x) {
     return a + (b - a) * x;
@@ -570,6 +642,7 @@ vec2 sampleSinc( sampler2D s, vec4 meta, float time ) {
       __publicField(this, "latencyBlocks");
       __publicField(this, "__cueStatus", "none");
       __publicField(this, "__blocksPerRender");
+      __publicField(this, "__isPlaying");
       __publicField(this, "__lastUpdatedTime");
       __publicField(this, "__renderer");
       __publicField(this, "__lastError");
@@ -577,12 +650,14 @@ vec2 sampleSinc( sampler2D s, vec4 meta, float time ) {
       __publicField(this, "__node");
       __publicField(this, "__bufferReaderNode");
       __publicField(this, "__bufferWriteBlocks");
+      __publicField(this, "__blockOffset");
       __publicField(this, "__beatManager");
       __publicField(this, "__program");
       __publicField(this, "__programCue");
       __publicField(this, "__programSwapTime");
       __publicField(this, "__params", /* @__PURE__ */ new Map());
-      __publicField(this, "__textures", /* @__PURE__ */ new Map());
+      __publicField(this, "__selfTextureStore");
+      this.__isPlaying = false;
       this.latencyBlocks = latencyBlocks != null ? latencyBlocks : 16;
       this.__blocksPerRender = blocksPerRender != null ? blocksPerRender : 16;
       if (hostDeck) {
@@ -594,10 +669,16 @@ vec2 sampleSinc( sampler2D s, vec4 meta, float time ) {
         this.__emit("changeBPM", { bpm: bpm2 });
       });
       this.__lastUpdatedTime = 0;
+      if (hostDeck) {
+        hostDeck.on("rewind", () => {
+          this.rewind();
+        });
+      }
       this.__renderer = new Renderer(gl, this.blocksPerRender);
+      this.__selfTextureStore = new TextureStore(gl);
       this.__program = null;
       this.__programCue = null;
-      this.__programSwapTime = 0;
+      this.__programSwapTime = null;
       this.__audio = audio;
       this.__node = audio.createGain();
       BufferReaderNode.addModule(audio).then(() => {
@@ -605,6 +686,7 @@ vec2 sampleSinc( sampler2D s, vec4 meta, float time ) {
         this.__bufferReaderNode.connect(this.__node);
       });
       this.__bufferWriteBlocks = 0;
+      this.__blockOffset = 0;
     }
     get cueStatus() {
       return this.__cueStatus;
@@ -614,6 +696,10 @@ vec2 sampleSinc( sampler2D s, vec4 meta, float time ) {
     }
     get framesPerRender() {
       return BLOCK_SIZE3 * this.__blocksPerRender;
+    }
+    get isPlaying() {
+      var _a, _b;
+      return (_b = (_a = this.hostDeck) == null ? void 0 : _a.__isPlaying) != null ? _b : this.__isPlaying;
     }
     get bpm() {
       return this.beatManager.bpm;
@@ -644,17 +730,33 @@ vec2 sampleSinc( sampler2D s, vec4 meta, float time ) {
     get params() {
       return this.__params;
     }
-    get textures() {
+    get __textureStore() {
       if (this.hostDeck) {
-        return this.hostDeck.textures;
+        return this.hostDeck.__textureStore;
       }
-      return this.__textures;
+      return this.__selfTextureStore;
     }
     dispose() {
       var _a;
       this.__setCueStatus("none");
       this.__renderer.dispose();
+      this.__selfTextureStore.dispose();
       (_a = this.__bufferReaderNode) == null ? void 0 : _a.disconnect();
+    }
+    play() {
+      this.__isPlaying = true;
+      this.__emit("play");
+    }
+    pause() {
+      this.__isPlaying = false;
+      this.__emit("pause");
+    }
+    rewind() {
+      this.__lastUpdatedTime = 0;
+      this.__blockOffset = this.__bufferWriteBlocks;
+      this.__beatManager.reset();
+      this.applyCueImmediately();
+      this.__emit("rewind");
     }
     compile(code) {
       return __async(this, null, function* () {
@@ -668,10 +770,9 @@ vec2 sampleSinc( sampler2D s, vec4 meta, float time ) {
           throw new Error(error != null ? error : void 0);
         });
         const requiredTextures = /* @__PURE__ */ new Set();
-        for (const texture of this.textures.values()) {
-          const textureName = `${texture.type}_${texture.name}`;
-          if (code.search(textureName) !== -1) {
-            requiredTextures.add(textureName);
+        for (const id of this.__textureStore.textureIds) {
+          if (code.search(id) !== -1) {
+            requiredTextures.add(id);
           }
         }
         this.__programCue = {
@@ -689,6 +790,15 @@ vec2 sampleSinc( sampler2D s, vec4 meta, float time ) {
         this.__programSwapTime = this.beatManager.time - this.beatManager.bar + this.beatManager.barSeconds;
       }
     }
+    applyCueImmediately() {
+      if (this.__programCue != null) {
+        this.__setCueStatus("none");
+        this.__renderer.applyCue();
+        this.__program = this.__programCue;
+        this.__programCue = null;
+        this.__programSwapTime = null;
+      }
+    }
     setParam(name, value, factor = 50) {
       const param = this.params.get(name);
       if (param) {
@@ -700,115 +810,57 @@ vec2 sampleSinc( sampler2D s, vec4 meta, float time ) {
       this.__emit("setParam", { name, value, factor });
     }
     loadWavetable(name, inputBuffer) {
-      return __async(this, null, function* () {
-        const frames = inputBuffer.length / 2048;
-        const buffer = new Float32Array(inputBuffer.length * 4);
-        for (let i = 0; i < inputBuffer.length; i++) {
-          buffer[i * 4 + 0] = inputBuffer[i];
-        }
-        const textureName = `wavetable_${name}`;
-        this.__renderer.uploadTexture(textureName, 2048, frames, buffer);
-        this.textures.set(textureName, {
-          type: "wavetable",
-          name,
-          width: 2048,
-          height: frames
-        });
-        if (this.__program && this.__program.code.search(textureName)) {
-          this.__program.requiredTextures.add(name);
-        }
-        if (this.__programCue && this.__programCue.code.search(textureName)) {
-          this.__programCue.requiredTextures.add(name);
-        }
-        this.__emit("loadWavetable", { name });
-      });
+      const id = `wavetable_${name}`;
+      this.__textureStore.loadWavetable(id, inputBuffer);
+      this.__addRequiredTexture(id);
+      this.__emit("loadWavetable", { name });
     }
     deleteWavetable(name) {
-      const textureName = `wavetable_${name}`;
-      if (this.textures.has(textureName)) {
-        this.textures.delete(textureName);
-        this.__renderer.deleteTexture(textureName);
+      const isSuccess = this.__textureStore.delete(`wavetable_${name}`);
+      if (isSuccess) {
         this.__emit("deleteWavetable", { name });
       }
     }
     loadImage(name, image) {
-      return __async(this, null, function* () {
-        const textureName = `image_${name}`;
-        this.__renderer.uploadImageSource(textureName, image);
-        this.textures.set(textureName, {
-          type: "image",
-          name,
-          width: image.width,
-          height: image.height
-        });
-        if (this.__program && this.__program.code.search(textureName)) {
-          this.__program.requiredTextures.add(name);
-        }
-        if (this.__programCue && this.__programCue.code.search(textureName)) {
-          this.__programCue.requiredTextures.add(name);
-        }
-        this.__emit("loadImage", { name });
-      });
+      const id = `image_${name}`;
+      this.__textureStore.loadImage(id, image);
+      this.__addRequiredTexture(id);
+      this.__emit("loadImage", { name });
     }
     deleteImage(name) {
-      const textureName = `image_${name}`;
-      if (this.textures.has(textureName)) {
-        this.textures.delete(textureName);
-        this.__renderer.deleteTexture(textureName);
+      const isSuccess = this.__textureStore.delete(`image_${name}`);
+      if (isSuccess) {
         this.__emit("deleteImage", { name });
       }
     }
     loadSample(name, inputBuffer) {
       return __async(this, null, function* () {
         const audioBuffer = yield this.__audio.decodeAudioData(inputBuffer);
-        const { sampleRate, duration } = audioBuffer;
-        const frames = audioBuffer.length;
-        const width = 2048;
-        const lengthCeiled = Math.ceil(frames / 2048);
-        const height = lengthCeiled;
-        const buffer = new Float32Array(width * height * 4);
-        const channels = audioBuffer.numberOfChannels;
-        const dataL = audioBuffer.getChannelData(0);
-        const dataR = audioBuffer.getChannelData(channels === 1 ? 0 : 1);
-        for (let i = 0; i < frames; i++) {
-          buffer[i * 4 + 0] = dataL[i];
-          buffer[i * 4 + 1] = dataR[i];
-        }
-        const textureName = `sample_${name}`;
-        this.__renderer.uploadTexture(textureName, width, height, buffer);
-        this.textures.set(textureName, {
-          type: "sample",
-          name,
-          width,
-          height,
-          sampleRate,
-          duration
-        });
-        if (this.__program && this.__program.code.search(textureName)) {
-          this.__program.requiredTextures.add(name);
-        }
-        if (this.__programCue && this.__programCue.code.search(textureName)) {
-          this.__programCue.requiredTextures.add(name);
-        }
+        const id = `sample_${name}`;
+        const { duration, sampleRate } = this.__textureStore.loadSample(id, audioBuffer);
+        this.__addRequiredTexture(id);
         this.__emit("loadSample", { name, duration, sampleRate });
       });
     }
     deleteSample(name) {
-      const textureName = `sample_${name}`;
-      if (this.textures.has(textureName)) {
-        this.textures.delete(textureName);
-        this.__renderer.deleteTexture(textureName);
+      const isSuccess = this.__textureStore.delete(`success_${name}`);
+      if (isSuccess) {
         this.__emit("deleteSample", { name });
       }
     }
     update() {
       return __async(this, null, function* () {
+        var _a;
         const bufferReaderNode = this.__bufferReaderNode;
         if (bufferReaderNode == null) {
           return;
         }
         const { readBlocks } = bufferReaderNode;
         const { sampleRate, blocksPerRender, framesPerRender } = this;
+        (_a = this.__bufferReaderNode) == null ? void 0 : _a.setActive(this.isPlaying);
+        if (!this.isPlaying) {
+          return;
+        }
         const blockAhead = this.__bufferWriteBlocks - readBlocks;
         if (blockAhead > this.latencyBlocks) {
           return;
@@ -816,30 +868,32 @@ vec2 sampleSinc( sampler2D s, vec4 meta, float time ) {
         if (blockAhead < 0) {
           this.__bufferWriteBlocks = (Math.floor(readBlocks / blocksPerRender) + 1) * blocksPerRender;
         }
-        const genTime = BLOCK_SIZE3 * this.__bufferWriteBlocks / sampleRate;
+        const genTime = BLOCK_SIZE3 * (this.__bufferWriteBlocks - this.__blockOffset) / sampleRate;
         this.beatManager.update(genTime);
-        let beginNext = this.__cueStatus === "applying" ? Math.floor((this.__programSwapTime - genTime) * sampleRate) : Infinity;
+        let beginNext = this.__programSwapTime != null ? Math.floor((this.__programSwapTime - genTime) * sampleRate) : Infinity;
         beginNext = Math.min(beginNext, framesPerRender);
         if (beginNext < 0) {
-          this.__setCueStatus("none");
-          this.__renderer.applyCue();
-          this.__program = this.__programCue;
-          this.__programCue = null;
+          this.applyCueImmediately();
           beginNext = framesPerRender;
         }
         if (this.__program) {
           yield this.__prepareBuffer(0, beginNext);
         }
         if (beginNext < framesPerRender && this.__programCue != null) {
-          this.__setCueStatus("none");
-          this.__renderer.applyCue();
-          this.__program = this.__programCue;
-          this.__programCue = null;
+          this.applyCueImmediately();
           yield this.__prepareBuffer(beginNext, framesPerRender - beginNext);
         }
         this.__bufferWriteBlocks += this.blocksPerRender;
         this.__emit("update");
       });
+    }
+    __addRequiredTexture(id) {
+      if (this.__program && this.__program.code.search(id)) {
+        this.__program.requiredTextures.add(id);
+      }
+      if (this.__programCue && this.__programCue.code.search(id)) {
+        this.__programCue.requiredTextures.add(id);
+      }
     }
     __prepareBuffer(first, count) {
       return __async(this, null, function* () {
@@ -870,18 +924,18 @@ vec2 sampleSinc( sampler2D s, vec4 meta, float time ) {
         let textureUnit = 0;
         const { requiredTextures } = this.__program;
         for (const textureName of requiredTextures) {
-          const texture = this.textures.get(textureName);
-          if (texture != null) {
-            this.__renderer.uniformTexture(textureName, textureUnit);
+          const textureEntry = this.__textureStore.get(textureName);
+          if (textureEntry != null) {
+            this.__renderer.uniformTexture(textureName, textureUnit, textureEntry.texture);
             textureUnit++;
-            const meta = texture.type === "sample" ? [
-              texture.width,
-              texture.height,
-              texture.sampleRate,
-              texture.duration
+            const meta = textureEntry.type === "sample" ? [
+              textureEntry.width,
+              textureEntry.height,
+              textureEntry.sampleRate,
+              textureEntry.duration
             ] : [
-              texture.width,
-              texture.height,
+              textureEntry.width,
+              textureEntry.height,
               0,
               0
             ];

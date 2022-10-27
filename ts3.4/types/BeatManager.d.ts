@@ -10,7 +10,7 @@ export declare class BeatManager {
     static CalcBeatSeconds(bpm: number): number;
     static CalcBarSeconds(bpm: number): number;
     static CalcSixteenBarSeconds(bpm: number): number;
-    __bpm: number;
+    private __bpm;
     bpm: number;
     readonly beatSeconds: number;
     readonly barSeconds: number;

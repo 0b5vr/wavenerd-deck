@@ -4,8 +4,12 @@
   <textarea cols="100" rows="40" id="textarea">
   </textarea><br />
   BPM: <input id="inputBpm" type="number" value="190" /><br />
+  <button id="buttonPlay">Play</button>
+  <button id="buttonPause" disabled>Pause</button>
+  <button id="buttonRewind">Rewind</button><br />
   <button id="buttonCompile">Compile</button>
-  <button id="buttonApplyCue" disabled>Apply Cue</button><br />
+  <button id="buttonApplyCue" disabled>Apply Cue</button>
+  <button id="buttonApplyCueImmediately" disabled>Apply Cue Immediately</button><br />
   <span id="spanStatus">Awaiting cue</span><br />
   <input id="inputUniformKnob" type="range" step="0.001" min="0" max="1" value="0" /> Knob
 </body>
@@ -48,18 +52,20 @@
 
     textarea.value = frag;
 
-    wavenerdDeck.compile( frag );
+    await wavenerdDeck.compile( frag );
+    wavenerdDeck.applyCueImmediately();
 
-    // == update wavenerd ============================================================================
+    // == update wavenerd ==========================================================================
     function update() {
       wavenerdDeck.update();
       requestAnimationFrame( update );
     }
     requestAnimationFrame( update );
 
-    // == wavenerd deck event listeners ==============================================================
+    // == wavenerd deck event listeners ============================================================
     wavenerdDeck.on( 'changeCueStatus', ( { cueStatus } ) => {
       buttonApplyCue.disabled = cueStatus !== 'ready';
+      buttonApplyCueImmediately.disabled = cueStatus !== 'ready';
 
       spanStatus.innerText = (
         cueStatus === 'none' ? 'Awaiting cue' :
@@ -69,19 +75,44 @@
       )
     } );
 
-    // == ui listeners ===============================================================================
+    wavenerdDeck.on( 'play', () => {
+      buttonPlay.disabled = true;
+      buttonPause.disabled = false;
+    } );
+
+    wavenerdDeck.on( 'pause', () => {
+      buttonPlay.disabled = false;
+      buttonPause.disabled = true;
+    } );
+
+    // == ui listeners =============================================================================
     inputBpm.addEventListener( 'change', () => {
       wavenerdDeck.bpm = inputBpm.value;
     } );
 
-    buttonCompile.addEventListener( 'click', () => {
+    buttonPlay.addEventListener( 'click', () => {
       audio.resume(); // uh
+      wavenerdDeck.play();
+    } );
+
+    buttonPause.addEventListener( 'click', () => {
+      wavenerdDeck.pause();
+    } );
+
+    buttonRewind.addEventListener( 'click', () => {
+      wavenerdDeck.rewind();
+    } );
+
+    buttonCompile.addEventListener( 'click', () => {
       wavenerdDeck.compile( textarea.value );
     } );
 
     buttonApplyCue.addEventListener( 'click', () => {
-      audio.resume(); // uh
       wavenerdDeck.applyCue();
+    } );
+
+    buttonApplyCueImmediately.addEventListener( 'click', () => {
+      wavenerdDeck.applyCueImmediately();
     } );
 
     inputUniformKnob.addEventListener( 'input', () => {
