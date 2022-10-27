@@ -210,6 +210,13 @@ export class WavenerdDeck {
 
     this.__lastUpdatedTime = 0.0;
 
+    // TODO: temporary solution
+    if ( hostDeck ) {
+      hostDeck.on( 'rewind', () => {
+        this.rewind();
+      } );
+    }
+
     // -- renderer ---------------------------------------------------------------------------------
     this.__renderer = new Renderer( gl, this.blocksPerRender );
 
@@ -272,6 +279,8 @@ export class WavenerdDeck {
     this.__beatManager.reset();
 
     this.applyCueImmediately();
+
+    this.__emit( 'rewind' );
   }
 
   /**
@@ -634,6 +643,7 @@ export interface WavenerdDeck extends EventEmittable<{
   update: void;
   play: void;
   pause: void;
+  rewind: void;
   changeCueStatus: { cueStatus: 'none' | 'compiling' | 'ready' | 'applying' };
   setParam: { name: string; value: number; factor: number };
   loadWavetable: { name: string };
