@@ -1,45 +1,92 @@
+import { Pool, arraySerial } from '@0b5vr/experimental';
 import { shaderchunkPost, shaderchunkPre } from './shaderchunks';
+import { glWaitGPUCommandsCompleteAsync } from './utils/glWaitGPUCommandsCompleteAsync';
 import { lazyProgram } from './utils/lazyProgram';
 
 const BLOCK_SIZE = 128;
+const POOL_SIZE = 128;
 
+export interface TFPoolEntry {
+  bufferL: WebGLBuffer;
+  bufferR: WebGLBuffer;
+  tf: WebGLTransformFeedback;
+  dstArrays: [ Float32Array, Float32Array ];
+}
+
+// -- utils ----------------------------------------------------------------------------------------
+function createOffsetBuffer( gl: WebGL2RenderingContext, length: number ): WebGLBuffer {
+  const array = new Float32Array( arraySerial( length ) );
+
+  const buffer = gl.createBuffer()!;
+
+  gl.bindBuffer( gl.ARRAY_BUFFER, buffer );
+  gl.bufferData( gl.ARRAY_BUFFER, array, gl.STATIC_DRAW );
+  gl.bindBuffer( gl.ARRAY_BUFFER, null );
+
+  return buffer;
+}
+
+function createTFBuffer( gl: WebGL2RenderingContext, length: number ): WebGLBuffer {
+  const buffer = gl.createBuffer()!;
+
+  gl.bindBuffer( gl.ARRAY_BUFFER, buffer );
+  gl.bufferData(
+    gl.ARRAY_BUFFER,
+    length * Float32Array.BYTES_PER_ELEMENT,
+    gl.STREAM_READ,
+  );
+  gl.bindBuffer( gl.ARRAY_BUFFER, null );
+
+  return buffer;
+}
+
+function createTFPoolEntry( gl: WebGL2RenderingContext, length: number ): TFPoolEntry {
+  const bufferL = createTFBuffer( gl, length );
+  const bufferR = createTFBuffer( gl, length );
+
+  const tf = gl.createTransformFeedback()!;
+
+  const dstArrays = [
+    new Float32Array( length ),
+    new Float32Array( length ),
+  ] as [ Float32Array, Float32Array ];
+
+  return { bufferL, bufferR, tf, dstArrays };
+}
+
+// -- class ----------------------------------------------------------------------------------------
 export class Renderer {
   public readonly gl: WebGL2RenderingContext;
   public readonly blocksPerRender: number;
 
+  public useSync: boolean;
+
   public readonly __extParallel: any;
+  public readonly __tfPool: Pool<TFPoolEntry>;
 
   public get framesPerRender(): number {
     return BLOCK_SIZE * this.blocksPerRender;
   }
 
   private __offsetBuffer: WebGLBuffer;
-  private __tfBuffers: [ WebGLBuffer, WebGLBuffer ];
-  private __transformFeedback: WebGLTransformFeedback;
 
   private __program: WebGLProgram | null;
   private __programCue: WebGLProgram | null;
-
-  private __dstArrays: [ Float32Array, Float32Array ];
 
   public constructor( gl: WebGL2RenderingContext, blocksPerRender: number ) {
     this.blocksPerRender = blocksPerRender;
 
     this.gl = gl;
 
+    this.useSync = false;
+
+    this.__tfPool = new Pool( arraySerial( POOL_SIZE ).map( () => (
+      createTFPoolEntry( gl, this.framesPerRender )
+    ) ) );
+
     this.__extParallel = gl.getExtension( 'KHR_parallel_shader_compile' );
 
-    this.__offsetBuffer = this.__createOffsetBuffer();
-    this.__tfBuffers = [
-      this.__createTFBuffer(),
-      this.__createTFBuffer(),
-    ];
-    this.__transformFeedback = this.__createTransformFeedback( this.__tfBuffers );
-
-    this.__dstArrays = [
-      new Float32Array( this.framesPerRender ),
-      new Float32Array( this.framesPerRender ),
-    ];
+    this.__offsetBuffer = createOffsetBuffer( gl, this.framesPerRender );
 
     this.__program = null;
     this.__programCue = null;
@@ -52,13 +99,22 @@ export class Renderer {
     const { gl } = this;
 
     gl.deleteBuffer( this.__offsetBuffer );
-    gl.deleteBuffer( this.__tfBuffers[ 0 ] );
-    gl.deleteBuffer( this.__tfBuffers[ 1 ] );
 
-    gl.deleteTransformFeedback( this.__transformFeedback );
+    for ( const { bufferL, bufferR, tf } of this.__tfPool.array ) {
+      gl.deleteBuffer( bufferL );
+      gl.deleteBuffer( bufferR );
+      gl.deleteTransformFeedback( tf );
+    }
 
     gl.deleteProgram( this.__program );
     gl.deleteProgram( this.__programCue );
+  }
+
+  /**
+   * Get a tfPoolEntry.
+   */
+  public getNextTFPoolEntry(): TFPoolEntry {
+    return this.__tfPool.next();
   }
 
   /**
@@ -155,22 +211,27 @@ export class Renderer {
   /**
    * Render and return a buffer.
    */
-  public async render( first: number, count: number ): Promise<[ Float32Array, Float32Array ]> {
+  public render( tfPoolEntry: TFPoolEntry, first: number, count: number ): void {
     const { gl, __program: program } = this;
+    const { bufferL, bufferR, tf } = tfPoolEntry;
+
     if ( program == null ) {
-      return this.__dstArrays;
+      return;
     }
 
-    // attrib
+    // -- attrib -----------------------------------------------------------------------------------
     const attribLocation = gl.getAttribLocation( program, 'off' );
 
     gl.bindBuffer( gl.ARRAY_BUFFER, this.__offsetBuffer );
     gl.enableVertexAttribArray( attribLocation );
     gl.vertexAttribPointer( attribLocation, 1, gl.FLOAT, false, 0, 0 );
 
-    // render
+    // -- render -----------------------------------------------------------------------------------
     gl.useProgram( program );
-    gl.bindTransformFeedback( gl.TRANSFORM_FEEDBACK, this.__transformFeedback );
+
+    gl.bindTransformFeedback( gl.TRANSFORM_FEEDBACK, tf );
+    gl.bindBufferRange( gl.TRANSFORM_FEEDBACK_BUFFER, 0, bufferL, 4 * first, 4 * count );
+    gl.bindBufferRange( gl.TRANSFORM_FEEDBACK_BUFFER, 1, bufferR, 4 * first, 4 * count );
     gl.enable( gl.RASTERIZER_DISCARD );
 
     gl.beginTransformFeedback( gl.POINTS );
@@ -180,74 +241,33 @@ export class Renderer {
     gl.disable( gl.RASTERIZER_DISCARD );
     gl.bindTransformFeedback( gl.TRANSFORM_FEEDBACK, null );
     gl.useProgram( null );
-
-    // feedback
-    gl.bindBuffer( gl.ARRAY_BUFFER, this.__tfBuffers[ 0 ] );
-    gl.getBufferSubData(
-      gl.ARRAY_BUFFER,
-      0,
-      this.__dstArrays[ 0 ],
-      first,
-      count,
-    );
-    gl.bindBuffer( gl.ARRAY_BUFFER, null );
-
-    gl.bindBuffer( gl.ARRAY_BUFFER, this.__tfBuffers[ 1 ] );
-    gl.getBufferSubData(
-      gl.ARRAY_BUFFER,
-      0,
-      this.__dstArrays[ 1 ],
-      first,
-      count,
-    );
-    gl.bindBuffer( gl.ARRAY_BUFFER, null );
-
-    return this.__dstArrays;
   }
 
-  private __createOffsetBuffer(): WebGLBuffer {
-    const { gl, framesPerRender } = this;
-
-    const array = new Float32Array( framesPerRender )
-      .map( ( _, i ) => i );
-
-    const buffer = gl.createBuffer()!;
-
-    gl.bindBuffer( gl.ARRAY_BUFFER, buffer );
-    gl.bufferData( gl.ARRAY_BUFFER, array, gl.STATIC_DRAW );
-    gl.bindBuffer( gl.ARRAY_BUFFER, null );
-
-    return buffer;
-  }
-
-  private __createTFBuffer(): WebGLBuffer {
-    const { gl, framesPerRender } = this;
-
-    const buffer = gl.createBuffer()!;
-
-    gl.bindBuffer( gl.ARRAY_BUFFER, buffer );
-    gl.bufferData(
-      gl.ARRAY_BUFFER,
-      framesPerRender * Float32Array.BYTES_PER_ELEMENT,
-      gl.DYNAMIC_COPY,
-    );
-    gl.bindBuffer( gl.ARRAY_BUFFER, null );
-
-    return buffer;
-  }
-
-  private __createTransformFeedback(
-    tfBuffers: [ WebGLBuffer, WebGLBuffer ]
-  ): WebGLTransformFeedback {
+  public async readBuffer( { bufferL, bufferR, dstArrays }: TFPoolEntry ): Promise<void> {
     const { gl } = this;
 
-    const tf = gl.createTransformFeedback()!;
+    if ( this.useSync ) {
+      await glWaitGPUCommandsCompleteAsync( gl );
+    }
 
-    gl.bindTransformFeedback( gl.TRANSFORM_FEEDBACK, tf );
-    gl.bindBufferBase( gl.TRANSFORM_FEEDBACK_BUFFER, 0, tfBuffers[ 0 ] );
-    gl.bindBufferBase( gl.TRANSFORM_FEEDBACK_BUFFER, 1, tfBuffers[ 1 ] );
-    gl.bindTransformFeedback( gl.TRANSFORM_FEEDBACK, null );
+    gl.bindBuffer( gl.ARRAY_BUFFER, bufferL );
+    gl.getBufferSubData(
+      gl.ARRAY_BUFFER,
+      0,
+      dstArrays[ 0 ],
+      0,
+      this.framesPerRender,
+    );
+    gl.bindBuffer( gl.ARRAY_BUFFER, null );
 
-    return tf;
+    gl.bindBuffer( gl.ARRAY_BUFFER, bufferR );
+    gl.getBufferSubData(
+      gl.ARRAY_BUFFER,
+      0,
+      dstArrays[ 1 ],
+      0,
+      this.framesPerRender,
+    );
+    gl.bindBuffer( gl.ARRAY_BUFFER, null );
   }
 }

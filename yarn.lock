@@ -2,6 +2,11 @@
 # yarn lockfile v1
 
 
+"@0b5vr/experimental@^0.9.5":
+  version "0.9.5"
+  resolved "https://registry.yarnpkg.com/@0b5vr/experimental/-/experimental-0.9.5.tgz#be2df636e543de5590bad7266753bf13931521b2"
+  integrity sha512-qSY765flLJoAnt/UxvBgxrgGDMehsdWRZPTt4uI2jYU0KKQyRCgtOsNTs5vP95MSgPuP3hMeLeTr14Y0nKNaEA==
+
 "@babel/code-frame@^7.5.5":
   version "7.16.7"
   resolved "https://registry.yarnpkg.com/@babel/code-frame/-/code-frame-7.16.7.tgz#44416b6bd7624b998f5b1af5d470856c40138789"

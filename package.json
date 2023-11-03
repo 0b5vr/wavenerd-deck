@@ -49,6 +49,7 @@
     "docs": "typedoc --entryPoints ./src/index.ts --out docs"
   },
   "devDependencies": {
+    "@0b5vr/experimental": "^0.9.5",
     "@types/webpack": "^4.41.12",
     "@types/webpack-dev-server": "^3.10.1",
     "@typescript-eslint/eslint-plugin": "^5.20.0",

@@ -1,7 +1,7 @@
+import { Renderer, TFPoolEntry } from './Renderer';
 import { BeatManager } from './BeatManager';
 import { BufferReaderNode } from './BufferReaderNode';
 import { EventEmittable } from './utils/EventEmittable';
-import { Renderer } from './Renderer';
 import { TextureStore } from './TextureStore';
 import { applyMixins } from './utils/applyMixins';
 import { lerp } from './utils/lerp';
@@ -95,8 +95,18 @@ export class WavenerdDeck {
   }
 
   /**
+   * Whether it should use `SYNC_GPU_COMMANDS_COMPLETE` or not.
+   */
+  public get useSync(): boolean {
+    return this.__renderer.useSync;
+  }
+  public set useSync( value: boolean ) {
+    this.__renderer.useSync = value;
+  }
+
+  /**
    * Its last updated time.
-   * Intended to be used for calculation of deltaTime inside (@link __prepareBuffer).
+   * Intended to be used for calculation of deltaTime inside (@link __updateUniforms).
    */
   private __lastUpdatedTime: number;
 
@@ -474,7 +484,7 @@ export class WavenerdDeck {
     // -- should I process the next program? -------------------------------------------------------
     let beginNext = this.__programSwapTime != null
       ? Math.floor( ( this.__programSwapTime - genTime ) * sampleRate )
-      : Infinity;
+      : framesPerRender;
     beginNext = Math.min( beginNext, framesPerRender );
 
     // -- swap the program from first --------------------------------------------------------------
@@ -485,18 +495,23 @@ export class WavenerdDeck {
     }
 
     // -- render -----------------------------------------------------------------------------------
+    const tfPoolEntry = this.__renderer.getNextTFPoolEntry();
+
     if ( this.__program ) {
-      await this.__prepareBuffer( 0, beginNext );
+      this.__updateUniforms();
+      this.__renderer.render( tfPoolEntry, 0, beginNext );
     }
 
-    // -- render the next program from the mid of the block ----------------------------------------
+    // render the next program from the mid of the block
     if ( beginNext < framesPerRender && this.__programCue != null ) {
       this.applyCueImmediately();
 
-      await this.__prepareBuffer( beginNext, framesPerRender - beginNext );
+      this.__updateUniforms();
+      this.__renderer.render( tfPoolEntry, beginNext, framesPerRender - beginNext );
     }
 
-    // -- update write blocks ----------------------------------------------------------------------
+    // -- read buffer + update write blocks --------------------------------------------------------
+    this.__readBuffer( tfPoolEntry, this.__bufferWriteBlocks );
     this.__bufferWriteBlocks += this.blocksPerRender;
 
     // -- emit an event ----------------------------------------------------------------------------
@@ -513,13 +528,7 @@ export class WavenerdDeck {
     }
   }
 
-  private async __prepareBuffer(
-    first: number,
-    count: number
-  ): Promise<void> {
-    const bufferReaderNode = this.__bufferReaderNode;
-    if ( bufferReaderNode == null ) { return; }
-
+  private __updateUniforms(): void {
     const {
       time,
       beatSeconds,
@@ -534,7 +543,7 @@ export class WavenerdDeck {
     const delta = time - this.__lastUpdatedTime;
     this.__lastUpdatedTime = time;
 
-    // render
+    // -- uniforms - params ------------------------------------------------------------------------
     this.params.forEach( ( param ) => {
       if ( param.factor <= 0.0 ) {
         param.value = param.target;
@@ -551,6 +560,7 @@ export class WavenerdDeck {
       );
     } );
 
+    // -- uniforms - samplers ----------------------------------------------------------------------
     let textureUnit = 0;
 
     const { requiredTextures } = this.__program!;
@@ -589,6 +599,7 @@ export class WavenerdDeck {
       }
     }
 
+    // -- uniforms - others ------------------------------------------------------------------------
     this.__renderer.uniform1f( 'bpm', this.bpm );
     this.__renderer.uniform1f( '_deltaSample', 1.0 / sampleRate );
     this.__renderer.uniform4f(
@@ -605,21 +616,26 @@ export class WavenerdDeck {
       sixteenBar,
       time
     );
+  }
 
-    const [ outL, outR ] = await this.__renderer.render( first, count );
+  private async __readBuffer( tfPoolEntry: TFPoolEntry, bufferWriteBlocks: number ): Promise<void> {
+    const bufferReaderNode = this.__bufferReaderNode;
+    if ( bufferReaderNode == null ) { return; }
+
+    await this.__renderer.readBuffer( tfPoolEntry );
 
     bufferReaderNode.write(
       0,
-      this.__bufferWriteBlocks,
-      first,
-      outL.subarray( first, first + count ),
+      bufferWriteBlocks,
+      0,
+      tfPoolEntry.dstArrays[ 0 ].subarray( 0, this.framesPerRender ),
     );
 
     bufferReaderNode.write(
       1,
-      this.__bufferWriteBlocks,
-      first,
-      outR.subarray( first, first + count ),
+      bufferWriteBlocks,
+      0,
+      tfPoolEntry.dstArrays[ 1 ].subarray( 0, this.framesPerRender ),
     );
   }
 
