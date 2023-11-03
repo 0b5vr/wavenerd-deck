@@ -9,7 +9,6 @@ class BufferReaderProcessor extends AudioWorkletProcessor {
     super();
 
     this.active = false;
-    this.blocks = 0;
     this.buffer = new Float32Array( CHANNELS * BUFFER_SIZE_PER_CHANNEL );
 
     this.port.onmessage = ( { data } ) => {
@@ -26,16 +25,14 @@ class BufferReaderProcessor extends AudioWorkletProcessor {
 
     const buffer = this.buffer;
 
-    const head = ( BLOCK_SIZE * this.blocks ) % BUFFER_SIZE_PER_CHANNEL;
+    const head = currentFrame % BUFFER_SIZE_PER_CHANNEL;
 
     outputs[ 0 ].forEach( ( ch, iCh ) => {
       const chHead = BUFFER_SIZE_PER_CHANNEL * iCh + head;
       ch.set( buffer.subarray( chHead, chHead + BLOCK_SIZE ) );
     } );
 
-    this.blocks ++;
-
-    this.port.postMessage( this.blocks );
+    this.port.postMessage( currentFrame / BLOCK_SIZE );
 
     return true;
   }
