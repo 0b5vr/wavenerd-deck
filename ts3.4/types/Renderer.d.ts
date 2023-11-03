@@ -1,19 +1,32 @@
+import { Pool } from '@0b5vr/experimental';
+export interface TFPoolEntry {
+    bufferL: WebGLBuffer;
+    bufferR: WebGLBuffer;
+    tf: WebGLTransformFeedback;
+    dstArrays: [
+        Float32Array,
+        Float32Array
+    ];
+}
 export declare class Renderer {
     readonly gl: WebGL2RenderingContext;
     readonly blocksPerRender: number;
+    useSync: boolean;
     readonly __extParallel: any;
+    readonly __tfPool: Pool<TFPoolEntry>;
     readonly framesPerRender: number;
     private __offsetBuffer;
-    private __tfBuffers;
-    private __transformFeedback;
     private __program;
     private __programCue;
-    private __dstArrays;
     constructor(gl: WebGL2RenderingContext, blocksPerRender: number);
     /**
      * Dispose the renderer.
      */
     dispose(): void;
+    /**
+     * Get a tfPoolEntry.
+     */
+    getNextTFPoolEntry(): TFPoolEntry;
     /**
      * Compile given shader code and cue the shader.
      */
@@ -45,11 +58,6 @@ export declare class Renderer {
     /**
      * Render and return a buffer.
      */
-    render(first: number, count: number): Promise<[
-        Float32Array,
-        Float32Array
-    ]>;
-    private __createOffsetBuffer;
-    private __createTFBuffer;
-    private __createTransformFeedback;
+    render(tfPoolEntry: TFPoolEntry, first: number, count: number): void;
+    readBuffer({ bufferL, bufferR, dstArrays }: TFPoolEntry): Promise<void>;
 }

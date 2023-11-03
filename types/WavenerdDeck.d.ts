@@ -52,8 +52,13 @@ export declare class WavenerdDeck {
     get bpm(): number;
     set bpm(value: number);
     /**
+     * Whether it should use `SYNC_GPU_COMMANDS_COMPLETE` or not.
+     */
+    get useSync(): boolean;
+    set useSync(value: boolean);
+    /**
      * Its last updated time.
-     * Intended to be used for calculation of deltaTime inside (@link __prepareBuffer).
+     * Intended to be used for calculation of deltaTime inside (@link __updateUniforms).
      */
     private __lastUpdatedTime;
     /**
@@ -165,7 +170,8 @@ export declare class WavenerdDeck {
     deleteSample(name: string): void;
     update(): Promise<void>;
     private __addRequiredTexture;
-    private __prepareBuffer;
+    private __updateUniforms;
+    private __readBuffer;
     private __setCueStatus;
     private __processErrorMessage;
 }
