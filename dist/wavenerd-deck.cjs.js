@@ -1,5 +1,5 @@
 /*!
-* @0b5vr/wavenerd-deck v0.5.6
+* @0b5vr/wavenerd-deck v0.5.7
 * a
 *
 * Copyright (c) 2020-2022 0b5vr
@@ -521,7 +521,7 @@ var BeatManager = class {
 applyMixins(BeatManager, [EventEmittable]);
 
 // src/BufferReaderProcessor.worklet.js
-var BufferReaderProcessor_worklet_default = "/* eslint-disable */\n\nconst BLOCK_SIZE = 128;\nconst CHANNELS = 2;\nconst BUFFER_SIZE_PER_CHANNEL = 65536;\n\nclass BufferReaderProcessor extends AudioWorkletProcessor {\n  constructor() {\n    super();\n\n    this.active = false;\n    this.buffer = new Float32Array( CHANNELS * BUFFER_SIZE_PER_CHANNEL );\n\n    this.port.onmessage = ( { data } ) => {\n      if ( Array.isArray( data ) ) {\n        this.buffer.set( ...data );\n      } else {\n        this.active = data;\n      }\n    };\n  }\n\n  process( inputs, outputs, parameters ) {\n    if ( !this.active ) { return true; }\n\n    const buffer = this.buffer;\n\n    const head = currentFrame % BUFFER_SIZE_PER_CHANNEL;\n\n    outputs[ 0 ].forEach( ( ch, iCh ) => {\n      const chHead = BUFFER_SIZE_PER_CHANNEL * iCh + head;\n      ch.set( buffer.subarray( chHead, chHead + BLOCK_SIZE ) );\n    } );\n\n    this.port.postMessage( currentFrame / BLOCK_SIZE );\n\n    return true;\n  }\n}\n\nregisterProcessor( 'buffer-reader-processor', BufferReaderProcessor );\n";
+var BufferReaderProcessor_worklet_default = "/* eslint-disable */\n\nconst BLOCK_SIZE = 128;\nconst CHANNELS = 2;\nconst BUFFER_SIZE_PER_CHANNEL = 65536;\n\nclass BufferReaderProcessor extends AudioWorkletProcessor {\n  constructor() {\n    super();\n\n    this.active = false;\n    this.buffer = new Float32Array( CHANNELS * BUFFER_SIZE_PER_CHANNEL );\n    this.frames = 0;\n\n    this.port.onmessage = ( { data } ) => {\n      if ( Array.isArray( data ) ) {\n        this.buffer.set( ...data );\n      } else {\n        this.active = data;\n      }\n    };\n  }\n\n  process( inputs, outputs, parameters ) {\n    if ( !this.active ) { return true; }\n\n    this.frames += BLOCK_SIZE;\n    const buffer = this.buffer;\n\n    const head = this.frames % BUFFER_SIZE_PER_CHANNEL;\n\n    outputs[ 0 ].forEach( ( ch, iCh ) => {\n      const chHead = BUFFER_SIZE_PER_CHANNEL * iCh + head;\n      ch.set( buffer.subarray( chHead, chHead + BLOCK_SIZE ) );\n    } );\n\n    this.port.postMessage( this.frames / BLOCK_SIZE );\n\n    return true;\n  }\n}\n\nregisterProcessor( 'buffer-reader-processor', BufferReaderProcessor );\n";
 
 // src/BufferReaderNode.ts
 var BLOCK_SIZE2 = 128;
