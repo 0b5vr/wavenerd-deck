@@ -44,7 +44,9 @@ jobs:
       - name: upload pages builds
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./dist
+          path: |
+            dist/
+            example/
 
   pages:
     if: ${{ github.ref == 'refs/heads/release' }}
