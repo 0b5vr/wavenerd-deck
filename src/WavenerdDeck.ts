@@ -265,7 +265,11 @@ export class WavenerdDeck {
    * Play the deck.
    */
   public play(): void {
+    if ( this.__isPlaying ) { return; }
+
     this.__isPlaying = true;
+    const readBlocks = this.__bufferReaderNode?.readBlocks ?? 0;
+    this.__blockOffset = readBlocks - this.__blockOffset;
 
     this.__emit( 'play' );
   }
@@ -274,7 +278,11 @@ export class WavenerdDeck {
    * Pause the deck.
    */
   public pause(): void {
+    if ( !this.__isPlaying ) { return; }
+
     this.__isPlaying = false;
+    const readBlocks = this.__bufferReaderNode?.readBlocks ?? 0;
+    this.__blockOffset = readBlocks - this.__blockOffset;
 
     this.__emit( 'pause' );
   }

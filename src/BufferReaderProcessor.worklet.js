@@ -22,17 +22,17 @@ class BufferReaderProcessor extends AudioWorkletProcessor {
   }
 
   process( inputs, outputs, parameters ) {
-    if ( !this.active ) { return true; }
-
     this.frames += BLOCK_SIZE;
-    const buffer = this.buffer;
 
-    const head = this.frames % BUFFER_SIZE_PER_CHANNEL;
+    if ( this.active ) {
+      const buffer = this.buffer;
+      const head = this.frames % BUFFER_SIZE_PER_CHANNEL;
 
-    outputs[ 0 ].forEach( ( ch, iCh ) => {
-      const chHead = BUFFER_SIZE_PER_CHANNEL * iCh + head;
-      ch.set( buffer.subarray( chHead, chHead + BLOCK_SIZE ) );
-    } );
+      outputs[ 0 ].forEach( ( ch, iCh ) => {
+        const chHead = BUFFER_SIZE_PER_CHANNEL * iCh + head;
+        ch.set( buffer.subarray( chHead, chHead + BLOCK_SIZE ) );
+      } );
+    }
 
     this.port.postMessage( this.frames / BLOCK_SIZE );
 
