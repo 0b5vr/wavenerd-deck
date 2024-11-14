@@ -3,7 +3,7 @@ name: Deploy Release
 on:
   push:
     tags:
-    - v*
+      - v*
 
 defaults:
   run:
@@ -13,15 +13,16 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout
-      uses: actions/checkout@v2
-    - name: Init Stuff
-      uses: ./.github/actions/init
-    - name: Fetch Deps
-      run: yarn install --frozen-lockfile
-    - name: Build
-      run: yarn build
-    - name: Publish
-      run: npm publish
-      env:
-        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: init stuff
+        uses: ./.github/actions/init
+
+      - name: build
+        run: yarn build
+
+      - name: publish
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
