@@ -144,9 +144,12 @@ export class WavenerdDeck {
 
   /**
    * Offset of the block compared to {@link __bufferWriteBlocks} in terms of time.
-   * It is used to rewind the deck.
+   * It is used to play, pause and rewind the deck.
    */
   private __blockOffset: number;
+  public get blockOffset(): number {
+    return this.hostDeck?.__blockOffset ?? this.__blockOffset;
+  }
 
   /**
    * Alias for the `audio.sampleRate` .
@@ -486,7 +489,7 @@ export class WavenerdDeck {
       ) * blocksPerRender;
     }
 
-    const genTime = BLOCK_SIZE * ( this.__bufferWriteBlocks - this.__blockOffset ) / sampleRate;
+    const genTime = BLOCK_SIZE * ( this.__bufferWriteBlocks - this.blockOffset ) / sampleRate;
     this.beatManager.update( genTime );
 
     // -- should I process the next program? -------------------------------------------------------
