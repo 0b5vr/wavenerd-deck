@@ -416,7 +416,7 @@ export class WavenerdDeck {
    */
   public loadImage(
     name: string,
-    image: TexImageSource,
+    image: TexImageSource & { width: number, height: number },
   ): void {
     const id = `image_${ name }`;
     this.__textureStore.loadImage( id, image );
