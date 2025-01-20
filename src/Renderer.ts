@@ -1,6 +1,7 @@
 import { Pool, arraySerial } from '@0b5vr/experimental';
 import { shaderchunkPost, shaderchunkPre } from './shaderchunks';
 import { glWaitGPUCommandsCompleteAsync } from './utils/glWaitGPUCommandsCompleteAsync';
+import { glslBinaryLiterals } from './glslBinaryLiterals';
 import { lazyProgram } from './utils/lazyProgram';
 
 const BLOCK_SIZE = 128;
@@ -123,9 +124,12 @@ export class Renderer {
   public async compile( code: string ): Promise<void> {
     const { gl } = this;
 
+    let codeToCompile = shaderchunkPre + code + shaderchunkPost;
+    codeToCompile = glslBinaryLiterals( codeToCompile );
+
     const program = await lazyProgram(
       gl,
-      shaderchunkPre + code + shaderchunkPost,
+      codeToCompile,
       '#version 300 es\nvoid main(){discard;}',
       {
         extParallel: this.__extParallel,
