@@ -6,7 +6,7 @@ export function glslBinaryLiterals( code: string ): string {
     return code;
   }
 
-  code.replace( regexPragma, '' );
+  code = code.replace( regexPragma, '' );
 
   return code.replaceAll( regexBinaryLiterals, ( _, binary, modifier ) => {
     return parseInt( binary.slice( 2 ), 2 ).toString() + modifier;
