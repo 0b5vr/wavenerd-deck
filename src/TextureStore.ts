@@ -64,7 +64,10 @@ export class TextureStore {
   /**
    * Load an image and store as a texture.
    */
-  public loadImage( id: string, image: TexImageSource ): TextureStoreImageEntry {
+  public loadImage(
+    id: string,
+    image: TexImageSource & { width: number, height: number },
+  ): TextureStoreImageEntry {
     const texture = this.__uploadImageSource( image );
 
     const entry = {
