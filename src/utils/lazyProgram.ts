@@ -7,14 +7,14 @@ export function lazyProgram(
      * `KHR_parallel_shader_compile`.
      * Compile async if provided.
      */
-    extParallel?: any,
+    extParallel?: any;
 
-    tfVaryings?: string[],
+    tfVaryings?: string[];
 
     /**
      * `gl.SEPARATE_ATTRIBS` by default
      */
-    tfBufferMode?: number,
+    tfBufferMode?: number;
   } = {},
 ): Promise<WebGLProgram> {
   const { extParallel, tfVaryings, tfBufferMode } = options;
@@ -25,32 +25,32 @@ export function lazyProgram(
 
   try {
     // == vert =====================================================================================
-    vertexShader = gl.createShader( gl.VERTEX_SHADER )!;
+    vertexShader = gl.createShader(gl.VERTEX_SHADER)!;
 
-    gl.shaderSource( vertexShader, vert );
-    gl.compileShader( vertexShader );
+    gl.shaderSource(vertexShader, vert);
+    gl.compileShader(vertexShader);
 
-    if ( !gl.getShaderParameter( vertexShader, gl.COMPILE_STATUS ) ) {
-      throw new Error( gl.getShaderInfoLog( vertexShader ) ?? undefined );
+    if (!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)) {
+      throw new Error(gl.getShaderInfoLog(vertexShader) ?? undefined);
     }
 
     // == frag =====================================================================================
-    fragmentShader = gl.createShader( gl.FRAGMENT_SHADER )!;
+    fragmentShader = gl.createShader(gl.FRAGMENT_SHADER)!;
 
-    gl.shaderSource( fragmentShader, frag );
-    gl.compileShader( fragmentShader );
+    gl.shaderSource(fragmentShader, frag);
+    gl.compileShader(fragmentShader);
 
-    if ( !gl.getShaderParameter( fragmentShader, gl.COMPILE_STATUS ) ) {
-      throw new Error( gl.getShaderInfoLog( fragmentShader ) ?? undefined );
+    if (!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)) {
+      throw new Error(gl.getShaderInfoLog(fragmentShader) ?? undefined);
     }
 
     // == program ==================================================================================
     program = gl.createProgram()!;
 
-    gl.attachShader( program, vertexShader );
-    gl.attachShader( program, fragmentShader );
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
 
-    if ( tfVaryings ) {
+    if (tfVaryings) {
       gl.transformFeedbackVaryings(
         program,
         tfVaryings,
@@ -58,34 +58,34 @@ export function lazyProgram(
       );
     }
 
-    gl.linkProgram( program );
+    gl.linkProgram(program);
 
-    return new Promise( ( resolve, reject ) => {
+    return new Promise((resolve, reject) => {
       const update = () => {
         if (
-          !extParallel ||
-          gl.getProgramParameter( program!, extParallel.COMPLETION_STATUS_KHR ) === true
+          !extParallel
+          || gl.getProgramParameter(program!, extParallel.COMPLETION_STATUS_KHR) === true
         ) {
-          if ( !gl.getProgramParameter( program!, gl.LINK_STATUS ) ) {
-            gl.deleteProgram( program );
-            reject( new Error( gl.getProgramInfoLog( program! ) ?? undefined ) );
+          if (!gl.getProgramParameter(program!, gl.LINK_STATUS)) {
+            gl.deleteProgram(program);
+            reject(new Error(gl.getProgramInfoLog(program!) ?? undefined));
           } else {
-            resolve( program! );
+            resolve(program!);
           }
 
           return;
         }
 
-        setTimeout( update, 10 );
+        setTimeout(update, 10);
       };
       update();
-    } );
-  } catch ( e ) {
-    gl.deleteProgram( program );
+    });
+  } catch (e) {
+    gl.deleteProgram(program);
 
-    return Promise.reject( e );
+    return Promise.reject(e);
   } finally {
-    gl.deleteShader( fragmentShader );
-    gl.deleteShader( vertexShader );
+    gl.deleteShader(fragmentShader);
+    gl.deleteShader(vertexShader);
   }
 }

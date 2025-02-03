@@ -79,7 +79,7 @@ vec2 sampleSinc( sampler2D s, vec4 meta, float time ) {
 }
 `;
 
-export const shaderchunkPreLines = shaderchunkPre.split( '\n' ).length;
+export const shaderchunkPreLines = shaderchunkPre.split('\n').length;
 
 export const shaderchunkPost = `void main() {
   vec2 out2 = mainAudio( mod( _timeHead + off * _deltaSample, timeLength ) );

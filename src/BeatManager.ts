@@ -11,16 +11,16 @@ export interface BeatManagerUpdateEvent {
 }
 
 export class BeatManager {
-  public static CalcBeatSeconds( bpm: number ): number {
+  public static CalcBeatSeconds(bpm: number): number {
     return 60.0 / bpm;
   }
 
-  public static CalcBarSeconds( bpm: number ): number {
+  public static CalcBarSeconds(bpm: number): number {
     // return this.beatLength * 4.0;
     return 240.0 / bpm;
   }
 
-  public static CalcSixteenBarSeconds( bpm: number ): number {
+  public static CalcSixteenBarSeconds(bpm: number): number {
     // return this.barLength * 16.0;
     return 3840.0 / bpm;
   }
@@ -29,23 +29,24 @@ export class BeatManager {
   public get bpm(): number {
     return this.__bpm;
   }
-  public set bpm( value: number ) {
+
+  public set bpm(value: number) {
     const prevBpm = this.__bpm;
-    this.__bpm = Math.max( 0.0, value );
+    this.__bpm = Math.max(0.0, value);
     this.__sixteenBar = this.__sixteenBar * prevBpm / this.__bpm;
-    this.__emit( 'changeBPM', { bpm: this.__bpm } );
+    this.__emit('changeBPM', { bpm: this.__bpm });
   }
 
   public get beatSeconds(): number {
-    return BeatManager.CalcBeatSeconds( this.__bpm );
+    return BeatManager.CalcBeatSeconds(this.__bpm);
   }
 
   public get barSeconds(): number {
-    return BeatManager.CalcBarSeconds( this.__bpm );
+    return BeatManager.CalcBarSeconds(this.__bpm);
   }
 
   public get sixteenBarSeconds(): number {
-    return BeatManager.CalcSixteenBarSeconds( this.__bpm );
+    return BeatManager.CalcSixteenBarSeconds(this.__bpm);
   }
 
   private __time = 0.0;
@@ -73,16 +74,16 @@ export class BeatManager {
     this.__sixteenBar = 0.0;
   }
 
-  public update( time: number ): BeatManagerUpdateEvent {
-    const beatSeconds = BeatManager.CalcBeatSeconds( this.__bpm );
-    const barSeconds = BeatManager.CalcBarSeconds( this.__bpm );
-    const sixteenBarSeconds = BeatManager.CalcSixteenBarSeconds( this.__bpm );
+  public update(time: number): BeatManagerUpdateEvent {
+    const beatSeconds = BeatManager.CalcBeatSeconds(this.__bpm);
+    const barSeconds = BeatManager.CalcBarSeconds(this.__bpm);
+    const sixteenBarSeconds = BeatManager.CalcSixteenBarSeconds(this.__bpm);
 
     const delta = time - this.__time;
 
-    this.__sixteenBar = mod( this.__sixteenBar + delta, sixteenBarSeconds );
-    this.__bar = mod( this.__sixteenBar, barSeconds );
-    this.__beat = mod( this.__bar, beatSeconds );
+    this.__sixteenBar = mod(this.__sixteenBar + delta, sixteenBarSeconds);
+    this.__bar = mod(this.__sixteenBar, barSeconds);
+    this.__beat = mod(this.__bar, beatSeconds);
 
     this.__time = time;
 
@@ -94,7 +95,7 @@ export class BeatManager {
       sixteenBar: this.__sixteenBar,
     };
 
-    this.__emit( 'update', event );
+    this.__emit('update', event);
 
     return event;
   }
@@ -104,4 +105,4 @@ export interface BeatManager extends EventEmittable<{
   update: BeatManagerUpdateEvent;
   changeBPM: { bpm: number };
 }> {}
-applyMixins( BeatManager, [ EventEmittable ] );
+applyMixins(BeatManager, [EventEmittable]);

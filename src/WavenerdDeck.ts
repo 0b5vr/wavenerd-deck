@@ -90,7 +90,8 @@ export class WavenerdDeck {
   public get bpm(): number {
     return this.beatManager.bpm;
   }
-  public set bpm( value: number ) {
+
+  public set bpm(value: number) {
     this.beatManager.bpm = value;
   }
 
@@ -100,7 +101,8 @@ export class WavenerdDeck {
   public get useSync(): boolean {
     return this.__renderer.useSync;
   }
-  public set useSync( value: boolean ) {
+
+  public set useSync(value: boolean) {
     this.__renderer.useSync = value;
   }
 
@@ -161,7 +163,7 @@ export class WavenerdDeck {
   private __beatManager: BeatManager;
   public get beatManager(): BeatManager {
     const hostDeckBeatManager = this.hostDeck?.beatManager;
-    if ( hostDeckBeatManager ) {
+    if (hostDeckBeatManager) {
       return hostDeckBeatManager;
     }
 
@@ -179,7 +181,7 @@ export class WavenerdDeck {
 
   private __selfTextureStore: TextureStore;
   private get __textureStore(): TextureStore {
-    if ( this.hostDeck ) {
+    if (this.hostDeck) {
       return this.hostDeck.__textureStore;
     }
 
@@ -189,7 +191,7 @@ export class WavenerdDeck {
   /**
    * Constructor of the WavenerdDeck.
    */
-  public constructor( {
+  public constructor({
     gl,
     audio,
     hostDeck,
@@ -203,37 +205,37 @@ export class WavenerdDeck {
     latencyBlocks?: number;
     blocksPerRender?: number;
     bpm?: number;
-  } ) {
+  }) {
     this.__isPlaying = false;
 
     this.latencyBlocks = latencyBlocks ?? 16;
     this.__blocksPerRender = blocksPerRender ?? 16;
 
     // -- host deck --------------------------------------------------------------------------------
-    if ( hostDeck ) {
+    if (hostDeck) {
       this.hostDeck = hostDeck;
     }
 
     // -- beat manager -----------------------------------------------------------------------------
     this.__beatManager = new BeatManager();
     this.__beatManager.bpm = bpm ?? 140;
-    this.__beatManager.on( 'changeBPM', ( { bpm } ) => {
-      this.__emit( 'changeBPM', { bpm } );
-    } );
+    this.__beatManager.on('changeBPM', ({ bpm }) => {
+      this.__emit('changeBPM', { bpm });
+    });
 
     this.__lastUpdatedTime = 0.0;
 
     // TODO: temporary solution
-    if ( hostDeck ) {
-      hostDeck.on( 'rewind', () => {
+    if (hostDeck) {
+      hostDeck.on('rewind', () => {
         this.rewind();
-      } );
+      });
     }
 
     // -- renderer ---------------------------------------------------------------------------------
-    this.__renderer = new Renderer( gl, this.blocksPerRender );
+    this.__renderer = new Renderer(gl, this.blocksPerRender);
 
-    this.__selfTextureStore = new TextureStore( gl );
+    this.__selfTextureStore = new TextureStore(gl);
 
     this.__program = null;
     this.__programCue = null;
@@ -243,10 +245,10 @@ export class WavenerdDeck {
     this.__audio = audio;
     this.__node = audio.createGain();
 
-    BufferReaderNode.addModule( audio ).then( () => {
-      this.__bufferReaderNode = new BufferReaderNode( audio );
-      this.__bufferReaderNode.connect( this.__node );
-    } );
+    BufferReaderNode.addModule(audio).then(() => {
+      this.__bufferReaderNode = new BufferReaderNode(audio);
+      this.__bufferReaderNode.connect(this.__node);
+    });
 
     this.__bufferWriteBlocks = 0;
     this.__blockOffset = 0;
@@ -256,7 +258,7 @@ export class WavenerdDeck {
    * Dispose this WavenerdDeck.
    */
   public dispose(): void {
-    this.__setCueStatus( 'none' );
+    this.__setCueStatus('none');
 
     this.__renderer.dispose();
     this.__selfTextureStore.dispose();
@@ -268,26 +270,26 @@ export class WavenerdDeck {
    * Play the deck.
    */
   public play(): void {
-    if ( this.__isPlaying ) { return; }
+    if (this.__isPlaying) { return; }
 
     this.__isPlaying = true;
     const readBlocks = this.__bufferReaderNode?.readBlocks ?? 0;
     this.__blockOffset = readBlocks - this.__blockOffset;
 
-    this.__emit( 'play' );
+    this.__emit('play');
   }
 
   /**
    * Pause the deck.
    */
   public pause(): void {
-    if ( !this.__isPlaying ) { return; }
+    if (!this.__isPlaying) { return; }
 
     this.__isPlaying = false;
     const readBlocks = this.__bufferReaderNode?.readBlocks ?? 0;
     this.__blockOffset = readBlocks - this.__blockOffset;
 
-    this.__emit( 'pause' );
+    this.__emit('pause');
   }
 
   /**
@@ -301,33 +303,33 @@ export class WavenerdDeck {
 
     this.applyCueImmediately();
 
-    this.__emit( 'rewind' );
+    this.__emit('rewind');
   }
 
   /**
    * Compile given shader code and cue the shader.
    */
-  public async compile( code: string ): Promise<void> {
-    this.__setCueStatus( 'compiling' );
+  public async compile(code: string): Promise<void> {
+    this.__setCueStatus('compiling');
 
-    await this.__renderer.compile( code ).catch( ( e ) => {
-      const error = this.__processErrorMessage( e );
+    await this.__renderer.compile(code).catch((e) => {
+      const error = this.__processErrorMessage(e);
 
       this.__programCue = null;
 
-      this.__setCueStatus( 'none' );
+      this.__setCueStatus('none');
 
-      this.__emit( 'error', { error } );
+      this.__emit('error', { error });
       this.__lastError = error;
 
-      throw new Error( error ?? undefined );
-    } );
+      throw new Error(error ?? undefined);
+    });
 
     const requiredTextures = new Set<string>();
 
-    for ( const id of this.__textureStore.textureIds ) {
-      if ( code.search( id ) !== -1 ) {
-        requiredTextures.add( id );
+    for (const id of this.__textureStore.textureIds) {
+      if (code.search(id) !== -1) {
+        requiredTextures.add(id);
       }
     }
 
@@ -336,9 +338,9 @@ export class WavenerdDeck {
       requiredTextures,
     };
 
-    this.__setCueStatus( 'ready' );
+    this.__setCueStatus('ready');
 
-    this.__emit( 'error', { error: null } );
+    this.__emit('error', { error: null });
     this.__lastError = null;
   }
 
@@ -346,11 +348,11 @@ export class WavenerdDeck {
    * Apply the cue shader after the bar ends.
    */
   public applyCue(): void {
-    if ( this.__cueStatus === 'ready' ) {
-      this.__setCueStatus( 'applying' );
+    if (this.__cueStatus === 'ready') {
+      this.__setCueStatus('applying');
 
-      this.__programSwapTime =
-        this.beatManager.time - this.beatManager.bar + this.beatManager.barSeconds;
+      this.__programSwapTime
+        = this.beatManager.time - this.beatManager.bar + this.beatManager.barSeconds;
     }
   }
 
@@ -358,8 +360,8 @@ export class WavenerdDeck {
    * Apply the cue shader immediately.
    */
   public applyCueImmediately(): void {
-    if ( this.__programCue != null ) {
-      this.__setCueStatus( 'none' );
+    if (this.__programCue != null) {
+      this.__setCueStatus('none');
 
       this.__renderer.applyCue();
 
@@ -372,16 +374,16 @@ export class WavenerdDeck {
   /**
    * Set a uniform value.
    */
-  public setParam( name: string, value: number, factor = 50.0 ): void {
-    const param = this.params.get( name );
-    if ( param ) {
+  public setParam(name: string, value: number, factor = 50.0): void {
+    const param = this.params.get(name);
+    if (param) {
       param.target = value;
       param.factor = factor;
     } else {
-      this.params.set( name, { name, target: value, value, factor } );
+      this.params.set(name, { name, target: value, value, factor });
     }
 
-    this.__emit( 'setParam', { name, value, factor } );
+    this.__emit('setParam', { name, value, factor });
   }
 
   /**
@@ -392,22 +394,22 @@ export class WavenerdDeck {
     name: string,
     inputBuffer: Float32Array,
   ): void {
-    const id = `wavetable_${ name }`;
-    this.__textureStore.loadWavetable( id, inputBuffer );
+    const id = `wavetable_${name}`;
+    this.__textureStore.loadWavetable(id, inputBuffer);
 
-    this.__addRequiredTexture( id );
+    this.__addRequiredTexture(id);
 
-    this.__emit( 'loadWavetable', { name } );
+    this.__emit('loadWavetable', { name });
   }
 
   /**
    * Delete a wavetable.
    */
-  public deleteWavetable( name: string ): void {
-    const isSuccess = this.__textureStore.delete( `wavetable_${ name }` );
+  public deleteWavetable(name: string): void {
+    const isSuccess = this.__textureStore.delete(`wavetable_${name}`);
 
-    if ( isSuccess ) {
-      this.__emit( 'deleteWavetable', { name } );
+    if (isSuccess) {
+      this.__emit('deleteWavetable', { name });
     }
   }
 
@@ -416,90 +418,90 @@ export class WavenerdDeck {
    */
   public loadImage(
     name: string,
-    image: TexImageSource & { width: number, height: number },
+    image: TexImageSource & { width: number; height: number },
   ): void {
-    const id = `image_${ name }`;
-    this.__textureStore.loadImage( id, image );
+    const id = `image_${name}`;
+    this.__textureStore.loadImage(id, image);
 
-    this.__addRequiredTexture( id );
+    this.__addRequiredTexture(id);
 
-    this.__emit( 'loadImage', { name } );
+    this.__emit('loadImage', { name });
   }
 
   /**
    * Delete an image.
    */
-  public deleteImage( name: string ): void {
-    const isSuccess = this.__textureStore.delete( `image_${ name }` );
+  public deleteImage(name: string): void {
+    const isSuccess = this.__textureStore.delete(`image_${name}`);
 
-    if ( isSuccess ) {
-      this.__emit( 'deleteImage', { name } );
+    if (isSuccess) {
+      this.__emit('deleteImage', { name });
     }
   }
 
   /**
    * Load a sample and store as a uniform texture.
    */
-  public async loadSample( name: string, inputBuffer: ArrayBuffer ): Promise<void> {
-    const audioBuffer = await this.__audio.decodeAudioData( inputBuffer );
+  public async loadSample(name: string, inputBuffer: ArrayBuffer): Promise<void> {
+    const audioBuffer = await this.__audio.decodeAudioData(inputBuffer);
 
-    const id = `sample_${ name }`;
-    const { duration, sampleRate } = this.__textureStore.loadSample( id, audioBuffer );
+    const id = `sample_${name}`;
+    const { duration, sampleRate } = this.__textureStore.loadSample(id, audioBuffer);
 
-    this.__addRequiredTexture( id );
+    this.__addRequiredTexture(id);
 
-    this.__emit( 'loadSample', { name, duration, sampleRate } );
+    this.__emit('loadSample', { name, duration, sampleRate });
   }
 
   /**
    * Delete a sample.
    */
-  public deleteSample( name: string ): void {
-    const isSuccess = this.__textureStore.delete( `success_${ name }` );
+  public deleteSample(name: string): void {
+    const isSuccess = this.__textureStore.delete(`success_${name}`);
 
-    if ( isSuccess ) {
-      this.__emit( 'deleteSample', { name } );
+    if (isSuccess) {
+      this.__emit('deleteSample', { name });
     }
   }
 
   public async update(): Promise<void> {
     const bufferReaderNode = this.__bufferReaderNode;
-    if ( bufferReaderNode == null ) { return; }
+    if (bufferReaderNode == null) { return; }
 
     const { readBlocks } = bufferReaderNode;
     const { sampleRate, blocksPerRender, framesPerRender } = this;
 
-    this.__bufferReaderNode?.setActive( this.isPlaying );
+    this.__bufferReaderNode?.setActive(this.isPlaying);
 
     // -- early abort? -----------------------------------------------------------------------------
-    if ( !this.isPlaying ) { return; }
+    if (!this.isPlaying) { return; }
 
     // -- choose a right write block ---------------------------------------------------------------
     const blockAhead = this.__bufferWriteBlocks - readBlocks;
 
     // we don't have to render this time
-    if ( blockAhead > this.latencyBlocks ) {
+    if (blockAhead > this.latencyBlocks) {
       return;
     }
 
     // we're very behind
-    if ( blockAhead < 0 ) {
+    if (blockAhead < 0) {
       this.__bufferWriteBlocks = (
-        Math.floor( readBlocks / blocksPerRender ) + 1
+        Math.floor(readBlocks / blocksPerRender) + 1
       ) * blocksPerRender;
     }
 
-    const genTime = BLOCK_SIZE * ( this.__bufferWriteBlocks - this.blockOffset ) / sampleRate;
-    this.beatManager.update( genTime );
+    const genTime = BLOCK_SIZE * (this.__bufferWriteBlocks - this.blockOffset) / sampleRate;
+    this.beatManager.update(genTime);
 
     // -- should I process the next program? -------------------------------------------------------
     let beginNext = this.__programSwapTime != null
-      ? Math.floor( ( this.__programSwapTime - genTime ) * sampleRate )
+      ? Math.floor((this.__programSwapTime - genTime) * sampleRate)
       : framesPerRender;
-    beginNext = Math.min( beginNext, framesPerRender );
+    beginNext = Math.min(beginNext, framesPerRender);
 
     // -- swap the program from first --------------------------------------------------------------
-    if ( beginNext < 0 ) {
+    if (beginNext < 0) {
       this.applyCueImmediately();
 
       beginNext = framesPerRender;
@@ -508,34 +510,34 @@ export class WavenerdDeck {
     // -- render -----------------------------------------------------------------------------------
     const tfPoolEntry = this.__renderer.getNextTFPoolEntry();
 
-    if ( this.__program ) {
+    if (this.__program) {
       this.__updateUniforms();
-      this.__renderer.render( tfPoolEntry, 0, beginNext );
+      this.__renderer.render(tfPoolEntry, 0, beginNext);
     }
 
     // render the next program from the mid of the block
-    if ( beginNext < framesPerRender && this.__programCue != null ) {
+    if (beginNext < framesPerRender && this.__programCue != null) {
       this.applyCueImmediately();
 
       this.__updateUniforms();
-      this.__renderer.render( tfPoolEntry, beginNext, framesPerRender - beginNext );
+      this.__renderer.render(tfPoolEntry, beginNext, framesPerRender - beginNext);
     }
 
     // -- read buffer + update write blocks --------------------------------------------------------
-    this.__readBuffer( tfPoolEntry, this.__bufferWriteBlocks );
+    this.__readBuffer(tfPoolEntry, this.__bufferWriteBlocks);
     this.__bufferWriteBlocks += this.blocksPerRender;
 
     // -- emit an event ----------------------------------------------------------------------------
-    this.__emit( 'update' );
+    this.__emit('update');
   }
 
-  private __addRequiredTexture( id: string ): void {
-    if ( this.__program && this.__program.code.search( id ) ) {
-      this.__program.requiredTextures.add( id );
+  private __addRequiredTexture(id: string): void {
+    if (this.__program && this.__program.code.search(id)) {
+      this.__program.requiredTextures.add(id);
     }
 
-    if ( this.__programCue && this.__programCue.code.search( id ) ) {
-      this.__programCue.requiredTextures.add( id );
+    if (this.__programCue && this.__programCue.code.search(id)) {
+      this.__programCue.requiredTextures.add(id);
     }
   }
 
@@ -555,11 +557,11 @@ export class WavenerdDeck {
     this.__lastUpdatedTime = time;
 
     // -- uniforms - params ------------------------------------------------------------------------
-    this.params.forEach( ( param ) => {
-      if ( param.factor <= 0.0 ) {
+    this.params.forEach((param) => {
+      if (param.factor <= 0.0) {
         param.value = param.target;
       } else {
-        param.value = lerp( param.target, param.value, Math.exp( -param.factor * delta ) );
+        param.value = lerp(param.target, param.value, Math.exp(-param.factor * delta));
       }
 
       this.__renderer.uniform4f(
@@ -567,40 +569,40 @@ export class WavenerdDeck {
         param.target,
         param.value,
         param.factor,
-        0.0
+        0.0,
       );
-    } );
+    });
 
     // -- uniforms - samplers ----------------------------------------------------------------------
     let textureUnit = 0;
 
     const { requiredTextures } = this.__program!;
 
-    for ( const textureName of requiredTextures ) {
-      const textureEntry = this.__textureStore.get( textureName );
+    for (const textureName of requiredTextures) {
+      const textureEntry = this.__textureStore.get(textureName);
 
-      if ( textureEntry != null ) {
+      if (textureEntry != null) {
         this.__renderer.uniformTexture(
           textureName,
           textureUnit,
           textureEntry.texture,
         );
-        textureUnit ++;
+        textureUnit++;
 
         const meta = (
           textureEntry.type === 'sample'
             ? [
-              textureEntry.width,
-              textureEntry.height,
-              textureEntry.sampleRate,
-              textureEntry.duration,
-            ]
+                textureEntry.width,
+                textureEntry.height,
+                textureEntry.sampleRate,
+                textureEntry.duration,
+              ]
             : [
-              textureEntry.width,
-              textureEntry.height,
-              0,
-              0,
-            ]
+                textureEntry.width,
+                textureEntry.height,
+                0,
+                0,
+              ]
         ) as [ number, number, number, number ];
 
         this.__renderer.uniform4f(
@@ -611,58 +613,58 @@ export class WavenerdDeck {
     }
 
     // -- uniforms - others ------------------------------------------------------------------------
-    this.__renderer.uniform1f( 'bpm', this.bpm );
-    this.__renderer.uniform1f( '_deltaSample', 1.0 / sampleRate );
+    this.__renderer.uniform1f('bpm', this.bpm);
+    this.__renderer.uniform1f('_deltaSample', 1.0 / sampleRate);
     this.__renderer.uniform4f(
       'timeLength',
       beatSeconds,
       barSeconds,
       sixteenBarSeconds,
-      1E16
+      1E16,
     );
     this.__renderer.uniform4f(
       '_timeHead',
       beat,
       bar,
       sixteenBar,
-      time
+      time,
     );
   }
 
-  private async __readBuffer( tfPoolEntry: TFPoolEntry, bufferWriteBlocks: number ): Promise<void> {
+  private async __readBuffer(tfPoolEntry: TFPoolEntry, bufferWriteBlocks: number): Promise<void> {
     const bufferReaderNode = this.__bufferReaderNode;
-    if ( bufferReaderNode == null ) { return; }
+    if (bufferReaderNode == null) { return; }
 
-    await this.__renderer.readBuffer( tfPoolEntry );
+    await this.__renderer.readBuffer(tfPoolEntry);
 
     bufferReaderNode.write(
       0,
       bufferWriteBlocks,
       0,
-      tfPoolEntry.dstArrays[ 0 ].subarray( 0, this.framesPerRender ),
+      tfPoolEntry.dstArrays[0].subarray(0, this.framesPerRender),
     );
 
     bufferReaderNode.write(
       1,
       bufferWriteBlocks,
       0,
-      tfPoolEntry.dstArrays[ 1 ].subarray( 0, this.framesPerRender ),
+      tfPoolEntry.dstArrays[1].subarray(0, this.framesPerRender),
     );
   }
 
-  private __setCueStatus( cueStatus: 'none' | 'compiling' | 'ready' | 'applying' ): void {
+  private __setCueStatus(cueStatus: 'none' | 'compiling' | 'ready' | 'applying'): void {
     this.__cueStatus = cueStatus;
-    this.__emit( 'changeCueStatus', { cueStatus } );
+    this.__emit('changeCueStatus', { cueStatus });
   }
 
-  private __processErrorMessage( error: any ): string | null {
+  private __processErrorMessage(error: any): string | null {
     const str: string | undefined = error?.message ?? error;
-    if ( !str ) { return null; }
+    if (!str) { return null; }
 
-    return str.replace( /ERROR: (\d+):(\d+)/g, ( match, ...args ) => {
-      const line = parseInt( args[ 1 ] ) - shaderchunkPreLines + 1;
-      return `ERROR: ${ args[ 0 ] }:${ line }`;
-    } );
+    return str.replace(/ERROR: (\d+):(\d+)/g, (match, ...args) => {
+      const line = parseInt(args[1]) - shaderchunkPreLines + 1;
+      return `ERROR: ${args[0]}:${line}`;
+    });
   }
 }
 
@@ -682,4 +684,4 @@ export interface WavenerdDeck extends EventEmittable<{
   changeBPM: { bpm: number };
   error: { error: string | null };
 }> {}
-applyMixins( WavenerdDeck, [ EventEmittable ] );
+applyMixins(WavenerdDeck, [EventEmittable]);

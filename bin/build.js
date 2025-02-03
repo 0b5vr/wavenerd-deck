@@ -1,9 +1,9 @@
-const path = require( 'path' );
-const esbuild = require( 'esbuild' );
-const packageJson = require( '../package.json' );
+const path = require('path');
+const esbuild = require('esbuild');
+const packageJson = require('../package.json');
 
 // == env ==========================================================================================
-const PORT = parseInt( process.env.PORT ?? 3800, 10 );
+const PORT = parseInt(process.env.PORT ?? 3800, 10);
 const SERVE = process.env.SERVE === '1';
 
 // == banner =======================================================================================
@@ -12,25 +12,25 @@ const licenseName = 'MIT License';
 const licenseUri = 'https://github.com/0b5vr/wavenerd-deck/blob/release/LICENSE';
 
 const bannerTextDev = `/*!
-* ${ packageJson.name } v${ packageJson.version }
-* ${ packageJson.description }
+* ${packageJson.name} v${packageJson.version}
+* ${packageJson.description}
 *
-* Copyright ${ copyright }
-* ${ packageJson.name } is distributed under ${ licenseName }
-* ${ licenseUri }
+* Copyright ${copyright}
+* ${packageJson.name} is distributed under ${licenseName}
+* ${licenseUri}
 */`;
 
-const bannerTextProd = `// ${ copyright } - ${ licenseUri }`;
+const bannerTextProd = `// ${copyright} - ${licenseUri}`;
 
 // == build ========================================================================================
-function createBuildOptions( format, dev ) {
-  const filename = `wavenerd-deck.${ format }${ dev ? '' : '.min' }.js`;
+function createBuildOptions(format, dev) {
+  const filename = `wavenerd-deck.${format}${dev ? '' : '.min'}.js`;
 
   /** @type {esbuild.BuildOptions} */
   const buildOptions = {
-    entryPoints: [ path.resolve( __dirname, '../src/index.ts' ) ],
+    entryPoints: [path.resolve(__dirname, '../src/index.ts')],
     bundle: true,
-    outfile: path.resolve( __dirname, '../dist', filename ),
+    outfile: path.resolve(__dirname, '../dist', filename),
     format,
     target: 'es6',
     globalName: 'WAVENERD_DECK',
@@ -40,26 +40,26 @@ function createBuildOptions( format, dev ) {
       js: dev ? bannerTextDev : bannerTextProd,
     },
     loader: {
-      '.worklet.js': 'text'
+      '.worklet.js': 'text',
     },
   };
 
   return buildOptions;
 }
 
-esbuild.build( createBuildOptions( 'iife', true ) );
-esbuild.build( createBuildOptions( 'iife', false ) );
-esbuild.build( createBuildOptions( 'cjs', true ) );
-esbuild.build( createBuildOptions( 'cjs', false ) );
-esbuild.build( createBuildOptions( 'esm', true ) );
-esbuild.build( createBuildOptions( 'esm', false ) );
+esbuild.build(createBuildOptions('iife', true));
+esbuild.build(createBuildOptions('iife', false));
+esbuild.build(createBuildOptions('cjs', true));
+esbuild.build(createBuildOptions('cjs', false));
+esbuild.build(createBuildOptions('esm', true));
+esbuild.build(createBuildOptions('esm', false));
 
 // == serve ========================================================================================
-if ( SERVE ) {
-  esbuild.serve( {
-    servedir: path.resolve( __dirname, '..' ),
+if (SERVE) {
+  esbuild.serve({
+    servedir: path.resolve(__dirname, '..'),
     port: PORT,
-  }, createBuildOptions( 'esm', true ) );
+  }, createBuildOptions('esm', true));
 
-  console.info( `Serving @ http://localhost:${ PORT }` );
+  console.info(`Serving @ http://localhost:${PORT}`);
 }

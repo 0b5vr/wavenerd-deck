@@ -9,7 +9,7 @@ export class TextureStore {
     return this.__textures.keys();
   }
 
-  public constructor( gl: WebGL2RenderingContext ) {
+  public constructor(gl: WebGL2RenderingContext) {
     this.gl = gl;
 
     this.__textures = new Map();
@@ -21,9 +21,9 @@ export class TextureStore {
   public dispose(): void {
     const { gl } = this;
 
-    this.__textures.forEach( ( texture ) => {
-      gl.deleteTexture( texture.texture );
-    } );
+    this.__textures.forEach((texture) => {
+      gl.deleteTexture(texture.texture);
+    });
 
     this.__textures.clear();
   }
@@ -31,8 +31,8 @@ export class TextureStore {
   /**
    * Get a texture.
    */
-  public get( id: string ): TextureStoreEntry | null {
-    return this.__textures.get( id ) ?? null;
+  public get(id: string): TextureStoreEntry | null {
+    return this.__textures.get(id) ?? null;
   }
 
   /**
@@ -41,15 +41,15 @@ export class TextureStore {
    *
    * The texture name is gonna be `wavetable_${ name }`.
    */
-  public loadWavetable( id: string, inputBuffer: Float32Array ): TextureStoreWavetableEntry {
+  public loadWavetable(id: string, inputBuffer: Float32Array): TextureStoreWavetableEntry {
     const frames = inputBuffer.length / 2048;
-    const buffer = new Float32Array( inputBuffer.length * 4 );
+    const buffer = new Float32Array(inputBuffer.length * 4);
 
-    for ( let i = 0; i < inputBuffer.length; i ++ ) {
-      buffer[ i * 4 + 0 ] = inputBuffer[ i ];
+    for (let i = 0; i < inputBuffer.length; i++) {
+      buffer[i * 4 + 0] = inputBuffer[i];
     }
 
-    const texture = this.__uploadTexture( 2048, frames, buffer );
+    const texture = this.__uploadTexture(2048, frames, buffer);
 
     const entry = {
       type: 'wavetable' as const,
@@ -57,7 +57,7 @@ export class TextureStore {
       height: frames,
       texture,
     };
-    this.__textures.set( id, entry );
+    this.__textures.set(id, entry);
     return entry;
   }
 
@@ -66,9 +66,9 @@ export class TextureStore {
    */
   public loadImage(
     id: string,
-    image: TexImageSource & { width: number, height: number },
+    image: TexImageSource & { width: number; height: number },
   ): TextureStoreImageEntry {
-    const texture = this.__uploadImageSource( image );
+    const texture = this.__uploadImageSource(image);
 
     const entry = {
       type: 'image' as const,
@@ -76,32 +76,32 @@ export class TextureStore {
       height: image.height,
       texture,
     };
-    this.__textures.set( id, entry );
+    this.__textures.set(id, entry);
     return entry;
   }
 
   /**
    * Load a sample and store as a texture.
    */
-  public loadSample( id: string, audioBuffer: AudioBuffer ): TextureStoreSampleEntry {
+  public loadSample(id: string, audioBuffer: AudioBuffer): TextureStoreSampleEntry {
     const { sampleRate, duration } = audioBuffer;
     const frames = audioBuffer.length;
     const width = 2048;
-    const lengthCeiled = Math.ceil( frames / 2048.0 );
+    const lengthCeiled = Math.ceil(frames / 2048.0);
     const height = lengthCeiled;
 
-    const buffer = new Float32Array( width * height * 4 );
+    const buffer = new Float32Array(width * height * 4);
     const channels = audioBuffer.numberOfChannels;
 
-    const dataL = audioBuffer.getChannelData( 0 );
-    const dataR = audioBuffer.getChannelData( channels === 1 ? 0 : 1 );
+    const dataL = audioBuffer.getChannelData(0);
+    const dataR = audioBuffer.getChannelData(channels === 1 ? 0 : 1);
 
-    for ( let i = 0; i < frames; i ++ ) {
-      buffer[ i * 4 + 0 ] = dataL[ i ];
-      buffer[ i * 4 + 1 ] = dataR[ i ];
+    for (let i = 0; i < frames; i++) {
+      buffer[i * 4 + 0] = dataL[i];
+      buffer[i * 4 + 1] = dataR[i];
     }
 
-    const texture = this.__uploadTexture( width, height, buffer );
+    const texture = this.__uploadTexture(width, height, buffer);
 
     const entry = {
       type: 'sample' as const,
@@ -111,7 +111,7 @@ export class TextureStore {
       duration,
       texture,
     };
-    this.__textures.set( id, entry );
+    this.__textures.set(id, entry);
     return entry;
   }
 
@@ -120,14 +120,14 @@ export class TextureStore {
    *
    * Returns a boolean that indicates whether the deletion is successful or not.
    */
-  public delete( id: string ): boolean {
+  public delete(id: string): boolean {
     const { gl } = this;
 
-    const texture = this.__textures.get( id );
-    if ( texture == null ) { return false; }
+    const texture = this.__textures.get(id);
+    if (texture == null) { return false; }
 
-    gl.deleteTexture( texture.texture );
-    this.__textures.delete( id );
+    gl.deleteTexture(texture.texture);
+    this.__textures.delete(id);
 
     return true;
   }
@@ -144,7 +144,7 @@ export class TextureStore {
 
     const texture = gl.createTexture()!;
 
-    gl.bindTexture( gl.TEXTURE_2D, texture );
+    gl.bindTexture(gl.TEXTURE_2D, texture);
 
     gl.texImage2D(
       gl.TEXTURE_2D,
@@ -158,10 +158,10 @@ export class TextureStore {
       source,
     );
 
-    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST );
-    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
 
-    gl.bindTexture( gl.TEXTURE_2D, null );
+    gl.bindTexture(gl.TEXTURE_2D, null);
 
     return texture;
   }
@@ -176,7 +176,7 @@ export class TextureStore {
 
     const texture = gl.createTexture()!;
 
-    gl.bindTexture( gl.TEXTURE_2D, texture );
+    gl.bindTexture(gl.TEXTURE_2D, texture);
 
     gl.texImage2D(
       gl.TEXTURE_2D,
@@ -187,10 +187,10 @@ export class TextureStore {
       source,
     );
 
-    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR );
-    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
 
-    gl.bindTexture( gl.TEXTURE_2D, null );
+    gl.bindTexture(gl.TEXTURE_2D, null);
 
     return texture;
   }

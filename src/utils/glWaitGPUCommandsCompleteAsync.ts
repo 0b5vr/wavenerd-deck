@@ -1,21 +1,21 @@
-export function glWaitGPUCommandsCompleteAsync( gl: WebGL2RenderingContext ): Promise<void> {
-  const sync = gl.fenceSync( gl.SYNC_GPU_COMMANDS_COMPLETE, 0 )!;
+export function glWaitGPUCommandsCompleteAsync(gl: WebGL2RenderingContext): Promise<void> {
+  const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0)!;
 
-  return new Promise( ( resolve, reject ) => {
+  return new Promise((resolve, reject) => {
     const test = (): void => {
-      const res = gl.clientWaitSync( sync, 0, 0 );
-      if ( res === gl.WAIT_FAILED ) {
+      const res = gl.clientWaitSync(sync, 0, 0);
+      if (res === gl.WAIT_FAILED) {
         reject();
         return;
       }
-      if ( res === gl.TIMEOUT_EXPIRED ) {
-        setTimeout( test, 10 );
+      if (res === gl.TIMEOUT_EXPIRED) {
+        setTimeout(test, 10);
         return;
       }
-      gl.deleteSync( sync );
+      gl.deleteSync(sync);
       resolve();
     };
 
     test();
-  } );
+  });
 }
