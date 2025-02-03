@@ -31,11 +31,11 @@
     "version": "yarn all",
     "all": "yarn lint && yarn clean && yarn build",
     "clean": "rimraf dist/ ts*/ types/",
-    "dev": "cross-env SERVE=1 node bin/build.js",
+    "dev": "cross-env SERVE=1 node bin/build.mjs",
     "lint": "eslint .",
     "lint-fix": "eslint . --fix",
     "build": "yarn build-js && yarn build-types",
-    "build-js": "node bin/build.js",
+    "build-js": "node bin/build.mjs",
     "build-types": "tsc --declaration --declarationDir ./types --emitDeclarationOnly"
   },
   "devDependencies": {

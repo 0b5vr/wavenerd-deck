@@ -1,6 +1,8 @@
-const path = require('path');
-const esbuild = require('esbuild');
-const packageJson = require('../package.json');
+/* global process */
+
+import path from 'path';
+import esbuild from 'esbuild';
+import packageJson from '../package.json' with { type: 'json' };
 
 // == env ==========================================================================================
 const PORT = parseInt(process.env.PORT ?? 3800, 10);
@@ -23,14 +25,16 @@ const bannerTextDev = `/*!
 const bannerTextProd = `// ${copyright} - ${licenseUri}`;
 
 // == build ========================================================================================
+const dirname = import.meta.dirname;
+
 function createBuildOptions(format, dev) {
   const filename = `wavenerd-deck.${format}${dev ? '' : '.min'}.js`;
 
   /** @type {esbuild.BuildOptions} */
   const buildOptions = {
-    entryPoints: [path.resolve(__dirname, '../src/index.ts')],
+    entryPoints: [path.resolve(dirname, '../src/index.ts')],
     bundle: true,
-    outfile: path.resolve(__dirname, '../dist', filename),
+    outfile: path.resolve(dirname, '../dist', filename),
     format,
     target: 'es6',
     globalName: 'WAVENERD_DECK',
@@ -57,7 +61,7 @@ esbuild.build(createBuildOptions('esm', false));
 // == serve ========================================================================================
 if (SERVE) {
   esbuild.serve({
-    servedir: path.resolve(__dirname, '..'),
+    servedir: path.resolve(dirname, '..'),
     port: PORT,
   }, createBuildOptions('esm', true));
 
