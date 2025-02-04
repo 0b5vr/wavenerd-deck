@@ -168,9 +168,6 @@ export class WavenerdDeck {
   private __programSwapTime: number | null;
 
   private __params = new Map<string, WavenerdDeckParam>();
-  private get params(): Map<string, WavenerdDeckParam> {
-    return this.__params;
-  }
 
   private __selfTextureStore: TextureStore;
   private get __textureStore(): TextureStore {
@@ -368,11 +365,11 @@ export class WavenerdDeck {
    * Set a uniform value.
    */
   public setParam(name: string, value: number): void {
-    const param = this.params.get(name);
+    const param = this.__params.get(name);
     if (param) {
       param.value = value;
     } else {
-      this.params.set(name, new WavenerdDeckParam(value));
+      this.__params.set(name, new WavenerdDeckParam(value));
     }
 
     this.__emit('setParam', { name, value });
@@ -537,7 +534,7 @@ export class WavenerdDeck {
   }
 
   private __updateParams(): void {
-    for (const param of this.params.values()) {
+    for (const param of this.__params.values()) {
       param.update();
     }
   }
@@ -555,7 +552,7 @@ export class WavenerdDeck {
     const { sampleRate } = this;
 
     // -- uniforms - params ------------------------------------------------------------------------
-    for (const [name, param] of this.params) {
+    for (const [name, param] of this.__params) {
       this.__renderer.uniform4f(
         'param_' + name,
         param.y0,
