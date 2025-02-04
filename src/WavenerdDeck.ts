@@ -4,21 +4,14 @@ import { BufferReaderNode } from './BufferReaderNode';
 import { EventEmittable } from './utils/EventEmittable';
 import { TextureStore } from './TextureStore';
 import { applyMixins } from './utils/applyMixins';
-import { lerp } from './utils/lerp';
 import { shaderchunkPreLines } from './shaderchunks';
+import { WavenerdDeckParam } from './WavenerdDeckParam';
 
 const BLOCK_SIZE = 128;
 
 interface WavenerdDeckProgram {
   code: string;
   requiredTextures: Set<string>;
-}
-
-interface WavenerdDeckParamEntry {
-  name: string;
-  value: number;
-  factor: number;
-  target: number;
 }
 
 export class WavenerdDeck {
@@ -174,8 +167,8 @@ export class WavenerdDeck {
   private __programCue: WavenerdDeckProgram | null;
   private __programSwapTime: number | null;
 
-  private __params = new Map<string, WavenerdDeckParamEntry>();
-  private get params(): Map<string, WavenerdDeckParamEntry> {
+  private __params = new Map<string, WavenerdDeckParam>();
+  private get params(): Map<string, WavenerdDeckParam> {
     return this.__params;
   }
 
@@ -374,16 +367,15 @@ export class WavenerdDeck {
   /**
    * Set a uniform value.
    */
-  public setParam(name: string, value: number, factor = 50.0): void {
+  public setParam(name: string, value: number): void {
     const param = this.params.get(name);
     if (param) {
-      param.target = value;
-      param.factor = factor;
+      param.value = value;
     } else {
-      this.params.set(name, { name, target: value, value, factor });
+      this.params.set(name, new WavenerdDeckParam(value));
     }
 
-    this.__emit('setParam', { name, value, factor });
+    this.__emit('setParam', { name, value });
   }
 
   /**
@@ -492,7 +484,10 @@ export class WavenerdDeck {
     }
 
     const genTime = BLOCK_SIZE * (this.__bufferWriteBlocks - this.blockOffset) / sampleRate;
+
+    // -- update stuff -----------------------------------------------------------------------------
     this.beatManager.update(genTime);
+    this.__updateParams();
 
     // -- should I process the next program? -------------------------------------------------------
     let beginNext = this.__programSwapTime != null
@@ -541,6 +536,12 @@ export class WavenerdDeck {
     }
   }
 
+  private __updateParams(): void {
+    for (const param of this.params.values()) {
+      param.update();
+    }
+  }
+
   private __updateUniforms(): void {
     const {
       time,
@@ -553,25 +554,16 @@ export class WavenerdDeck {
     } = this.beatManager;
     const { sampleRate } = this;
 
-    const delta = time - this.__lastUpdatedTime;
-    this.__lastUpdatedTime = time;
-
     // -- uniforms - params ------------------------------------------------------------------------
-    this.params.forEach((param) => {
-      if (param.factor <= 0.0) {
-        param.value = param.target;
-      } else {
-        param.value = lerp(param.target, param.value, Math.exp(-param.factor * delta));
-      }
-
+    for (const [name, param] of this.params) {
       this.__renderer.uniform4f(
-        'param_' + param.name,
-        param.target,
-        param.value,
-        param.factor,
-        0.0,
+        'param_' + name,
+        param.y0,
+        param.y1,
+        param.y2,
+        param.y3,
       );
-    });
+    }
 
     // -- uniforms - samplers ----------------------------------------------------------------------
     let textureUnit = 0;
@@ -615,6 +607,7 @@ export class WavenerdDeck {
     // -- uniforms - others ------------------------------------------------------------------------
     this.__renderer.uniform1f('bpm', this.bpm);
     this.__renderer.uniform1f('_deltaSample', 1.0 / sampleRate);
+    this.__renderer.uniform1f('_framesPerRender', this.framesPerRender);
     this.__renderer.uniform4f(
       'timeLength',
       beatSeconds,
@@ -674,7 +667,7 @@ export interface WavenerdDeck extends EventEmittable<{
   pause: void;
   rewind: void;
   changeCueStatus: { cueStatus: 'none' | 'compiling' | 'ready' | 'applying' };
-  setParam: { name: string; value: number; factor: number };
+  setParam: { name: string; value: number };
   loadWavetable: { name: string };
   deleteWavetable: { name: string };
   loadImage: { name: string };

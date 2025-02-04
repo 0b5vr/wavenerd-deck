@@ -8,6 +8,7 @@ uniform float bpm;
 uniform vec4 timeLength;
 uniform float sampleRate;
 uniform float _deltaSample;
+uniform float _framesPerRender;
 uniform vec4 _timeHead;
 
 in float off;
@@ -15,8 +16,19 @@ in float off;
 out float outL;
 out float outR;
 
-float paramFetch( vec4 param ) {
-  return mix( param.x, param.y, exp( -param.z * off * _deltaSample ) );
+float paramFetch(vec4 param) {
+  float x = off / _framesPerRender;
+  vec4 v = x - vec4(1.0, 0.0, -1.0, -2.0);
+  float y = dot(
+    vec4(
+      v.y * v.z * v.w,
+      v.x * v.z * v.w,
+      v.x * v.y * v.w,
+      v.x * v.y * v.z
+    ),
+    param / vec4(6.0, -2.0, 2.0, -6.0)
+  );
+  return clamp(y, 0.0, 1.0);
 }
 
 float wavetableNearest( sampler2D w, vec4 meta, vec2 position ) {
