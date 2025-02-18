@@ -100,12 +100,6 @@ export class WavenerdDeck {
   }
 
   /**
-   * Its last updated time.
-   * Intended to be used for calculation of deltaTime inside (@link __updateUniforms).
-   */
-  private __lastUpdatedTime: number;
-
-  /**
    * Its renderer.
    */
   private __renderer: Renderer;
@@ -213,8 +207,6 @@ export class WavenerdDeck {
       this.__emit('changeBPM', { bpm });
     });
 
-    this.__lastUpdatedTime = 0.0;
-
     // TODO: temporary solution
     if (hostDeck) {
       hostDeck.on('rewind', () => {
@@ -286,7 +278,6 @@ export class WavenerdDeck {
    * Rewind the deck.
    */
   public rewind(): void {
-    this.__lastUpdatedTime = 0.0;
     this.__blockOffset = this.__bufferWriteBlocks;
 
     this.__beatManager.reset();
