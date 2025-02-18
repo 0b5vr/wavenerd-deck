@@ -34,7 +34,7 @@ function createTFBuffer(gl: WebGL2RenderingContext, length: number): WebGLBuffer
   gl.bufferData(
     gl.ARRAY_BUFFER,
     length * Float32Array.BYTES_PER_ELEMENT,
-    gl.STREAM_READ,
+    gl.DYNAMIC_READ,
   );
   gl.bindBuffer(gl.ARRAY_BUFFER, null);
 

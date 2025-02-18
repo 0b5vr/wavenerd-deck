@@ -58,11 +58,11 @@
     wavenerdDeck.applyCueImmediately();
 
     // == update wavenerd ==========================================================================
-    function update() {
-      wavenerdDeck.update();
-      requestAnimationFrame( update );
+    async function update() {
+      await wavenerdDeck.update();
+      setTimeout(update);
     }
-    requestAnimationFrame( update );
+    update();
 
     // == wavenerd deck event listeners ============================================================
     wavenerdDeck.on( 'changeCueStatus', ( { cueStatus } ) => {

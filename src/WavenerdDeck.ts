@@ -507,7 +507,7 @@ export class WavenerdDeck {
     }
 
     // -- read buffer + update write blocks --------------------------------------------------------
-    this.__readBuffer(tfPoolEntry, this.__bufferWriteBlocks);
+    await this.__readBuffer(tfPoolEntry, this.__bufferWriteBlocks);
     this.__bufferWriteBlocks += this.blocksPerRender;
 
     // -- emit an event ----------------------------------------------------------------------------
