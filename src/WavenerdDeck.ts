@@ -6,11 +6,7 @@ import { TextureStore } from './TextureStore';
 import { applyMixins } from './utils/applyMixins';
 import { shaderchunkPreLines } from './renderer/shaderchunks';
 import { WavenerdDeckParam } from './WavenerdDeckParam';
-
-const BLOCK_SIZE = 128;
-const POOL_SIZE = 128;
-const BLOCKS_PER_RENDER = 16;
-const FRAMES_PER_RENDER = BLOCK_SIZE * BLOCKS_PER_RENDER;
+import { BLOCKS_PER_RENDER, BLOCK_SIZE, FRAMES_PER_RENDER, POOL_SIZE } from './constants';
 
 interface WavenerdDeckProgram {
   code: string;

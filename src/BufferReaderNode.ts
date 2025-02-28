@@ -1,6 +1,6 @@
 import processorCode from './BufferReaderProcessor.worklet.js';
+import { BLOCK_SIZE } from './constants.js';
 
-const BLOCK_SIZE = 128;
 const CHANNELS = 2;
 const BUFFER_SIZE_PER_CHANNEL = 65536;
 

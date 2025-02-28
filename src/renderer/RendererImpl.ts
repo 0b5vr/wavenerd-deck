@@ -4,11 +4,7 @@ import { glslBinaryLiterals } from './glslBinaryLiterals';
 import { lazyProgram } from './utils/lazyProgram';
 import { TextureUploader } from './TextureUploader';
 import { TextureStoreEntry } from '../TextureStoreEntry';
-
-const BLOCK_SIZE = 128;
-const POOL_SIZE = 128;
-const BLOCKS_PER_RENDER = 16;
-const FRAMES_PER_RENDER = BLOCK_SIZE * BLOCKS_PER_RENDER;
+import { POOL_SIZE, FRAMES_PER_RENDER } from '../constants';
 
 // Internal TF pool entry for the worker
 interface TFPoolEntry {
