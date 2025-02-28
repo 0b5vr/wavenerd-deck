@@ -6,10 +6,10 @@ uniform float _framesPerRender;
 
 in vec2 position;
 
-out float vOff;
+out float _vOff;
 
 void main() {
-  vOff = floor(_framesPerRender * (position.x * 0.5 + 0.5));
+  _vOff = floor(_framesPerRender * (position.x * 0.5 + 0.5));
   gl_Position = vec4(position, 0.0, 1.0);
 }
 `;
@@ -27,12 +27,12 @@ uniform float _deltaSample;
 uniform float _framesPerRender;
 uniform vec4 _timeHead;
 
-in float vOff;
+in float _vOff;
 
-out vec4 fragColor;
+out vec4 _fragColor;
 
 float paramFetch(vec4 param) {
-  float x = vOff / _framesPerRender;
+  float x = _vOff / _framesPerRender;
   vec4 v = x - vec4(1.0, 0.0, -1.0, -2.0);
   float y = dot(
     vec4(
@@ -109,6 +109,6 @@ vec2 sampleSinc( sampler2D s, vec4 meta, float time ) {
 export const shaderchunkPreLines = shaderchunkPre.split('\n').length;
 
 export const shaderchunkPost = `void main() {
-  vec2 out2 = mainAudio(mod(_timeHead + vOff * _deltaSample, timeLength));
-  fragColor = vec4(out2.x, out2.y, 0.0, 1.0);
+  vec2 out2 = mainAudio(mod(_timeHead + _vOff * _deltaSample, timeLength));
+  _fragColor = vec4(out2.x, out2.y, 0.0, 1.0);
 }`;
