@@ -12,11 +12,7 @@ export class Renderer {
     reject: (reason: Error) => void;
   }>();
 
-  public readonly gl: WebGL2RenderingContext;
-
-  constructor(gl: WebGL2RenderingContext, { blocksPerRender }: { blocksPerRender?: number }) {
-    this.gl = gl;
-
+  constructor({ blocksPerRender }: { blocksPerRender?: number }) {
     this.worker = Worker();
     this.worker.onmessage = this.__handleMessage.bind(this);
 

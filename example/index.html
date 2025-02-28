@@ -22,12 +22,9 @@
   import { fetchImage } from './fetchImage.js';
 
   ( async () => {
-    const canvas = document.createElement( 'canvas' );
-    const gl = canvas.getContext( 'webgl2' );
-
     const audio = new AudioContext();
 
-    const wavenerdDeck = new WavenerdDeck( { gl, audio } );
+    const wavenerdDeck = new WavenerdDeck( { audio } );
     wavenerdDeck.node.connect( audio.destination );
     wavenerdDeck.bpm = 190;
 

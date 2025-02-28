@@ -170,14 +170,12 @@ export class WavenerdDeck {
    * Constructor of the WavenerdDeck.
    */
   public constructor({
-    gl,
     audio,
     hostDeck,
     latencyBlocks,
     blocksPerRender,
     bpm,
   }: {
-    gl: WebGL2RenderingContext;
     audio: AudioContext;
     hostDeck?: WavenerdDeck;
     latencyBlocks?: number;
@@ -209,7 +207,7 @@ export class WavenerdDeck {
     }
 
     // -- renderer ---------------------------------------------------------------------------------
-    this.__renderer = new Renderer(gl, { blocksPerRender });
+    this.__renderer = new Renderer({ blocksPerRender });
 
     this.__textureStore = new TextureStore();
 
