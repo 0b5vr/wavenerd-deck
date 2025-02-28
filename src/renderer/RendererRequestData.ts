@@ -8,7 +8,7 @@ export type RendererRequestData = (
   | { type: 'uploadTexture'; textureId: string; entry: TextureStoreEntry }
   | { type: 'deleteTexture'; textureId: string }
   | { type: 'clearTextures' }
-  | { type: 'render'; tfIndex: number; first: number; count: number; uniforms: RenderUniforms }
-  | { type: 'readBuffer'; tfIndex: number }
+  | { type: 'render'; first: number; count: number; uniforms: RenderUniforms }
+  | { type: 'readBuffer' }
   | { type: '__heck' } // to make type check work
 );

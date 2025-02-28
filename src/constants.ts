@@ -4,11 +4,6 @@
 export const BLOCK_SIZE = 128;
 
 /**
- * The size of the transform feedback pool.
- */
-export const POOL_SIZE = 128;
-
-/**
  * The number of blocks that will be processed per render call.
  */
 export const BLOCKS_PER_RENDER = 16;

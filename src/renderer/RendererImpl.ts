@@ -1,70 +1,64 @@
-import { arraySerial } from '@0b5vr/experimental';
-import { shaderchunkPost, shaderchunkPre } from './shaderchunks';
+import { shaderchunkVertex, shaderchunkPre, shaderchunkPost } from './shaderchunks';
 import { glslBinaryLiterals } from './glslBinaryLiterals';
 import { lazyProgram } from './utils/lazyProgram';
 import { TextureUploader } from './TextureUploader';
 import { TextureStoreEntry } from '../TextureStoreEntry';
-import { POOL_SIZE, FRAMES_PER_RENDER } from '../constants';
+import { FRAMES_PER_RENDER } from '../constants';
 import { RenderUniforms } from './RenderUniforms';
 
-// Internal TF pool entry for the worker
-interface TFPoolEntry {
-  bufferL: WebGLBuffer;
-  bufferR: WebGLBuffer;
-  tf: WebGLTransformFeedback;
-  dstArrays: [Float32Array, Float32Array];
-}
-
-// Texture data interface for transferring texture data
-export interface TextureData {
-  type: 'image' | 'wavetable' | 'sample';
-  width: number;
-  height: number;
-  data: ArrayBuffer;
-  format?: number; // gl.RGBA, gl.RGB, etc.
-  internalFormat?: number; // gl.RGBA8, gl.RGB8, etc.
-  dataType?: number; // gl.UNSIGNED_BYTE, gl.FLOAT, etc.
-}
-
 // -- utils ----------------------------------------------------------------------------------------
-function createOffsetBuffer(gl: WebGL2RenderingContext, length: number): WebGLBuffer {
-  const array = new Float32Array(arraySerial(length));
+function createQuadBuffer(gl: WebGL2RenderingContext): WebGLBuffer {
+  const vertices = new Float32Array([
+    -1.0, -1.0,
+    1.0, -1.0,
+    -1.0, 1.0,
+    1.0, 1.0,
+  ]);
 
   const buffer = gl.createBuffer()!;
-
   gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-  gl.bufferData(gl.ARRAY_BUFFER, array, gl.STATIC_DRAW);
+  gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
   gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
   return buffer;
 }
 
-function createTFBuffer(gl: WebGL2RenderingContext, length: number): WebGLBuffer {
-  const buffer = gl.createBuffer()!;
+function createFramebufferTexture(gl: WebGL2RenderingContext, width: number): WebGLTexture {
+  const texture = gl.createTexture()!;
+  gl.bindTexture(gl.TEXTURE_2D, texture);
 
-  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-  gl.bufferData(
-    gl.ARRAY_BUFFER,
-    length * Float32Array.BYTES_PER_ELEMENT,
-    gl.DYNAMIC_READ,
+  gl.texImage2D(
+    gl.TEXTURE_2D,
+    0,
+    gl.RGBA32F,
+    width,
+    1,
+    0,
+    gl.RGBA,
+    gl.FLOAT,
+    null,
   );
-  gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
-  return buffer;
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+  gl.bindTexture(gl.TEXTURE_2D, null);
+
+  return texture;
 }
 
-function createTFPoolEntry(gl: WebGL2RenderingContext, length: number): TFPoolEntry {
-  const bufferL = createTFBuffer(gl, length);
-  const bufferR = createTFBuffer(gl, length);
+function createFramebuffer(gl: WebGL2RenderingContext, length: number): [WebGLFramebuffer, WebGLTexture] {
+  const framebuffer = gl.createFramebuffer()!;
 
-  const tf = gl.createTransformFeedback()!;
+  const texture = createFramebufferTexture(gl, length);
 
-  const dstArrays = [
-    new Float32Array(length),
-    new Float32Array(length),
-  ] as [Float32Array, Float32Array];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-  return { bufferL, bufferR, tf, dstArrays };
+  return [framebuffer, texture];
 }
 
 // -- class ----------------------------------------------------------------------------------------
@@ -72,24 +66,29 @@ export class RendererImpl {
   public readonly gl: WebGL2RenderingContext;
 
   public readonly __extParallel: any;
-  private readonly __tfPool: TFPoolEntry[];
+  private readonly __framebuffer: WebGLFramebuffer;
+  private readonly __texture: WebGLTexture;
+  private readonly __dstArray: Float32Array;
   private __textureUploader: TextureUploader;
 
-  private __offsetBuffer: WebGLBuffer;
+  private __quadBuffer: WebGLBuffer;
 
   private __program: WebGLProgram | null;
   private __programCue: WebGLProgram | null;
 
   public constructor(gl: WebGL2RenderingContext) {
     this.gl = gl;
+    gl.getExtension('EXT_color_buffer_float');
+    gl.enable(gl.SCISSOR_TEST);
 
-    this.__tfPool = arraySerial(POOL_SIZE).map(() => (
-      createTFPoolEntry(gl, FRAMES_PER_RENDER)
-    ));
+    const [framebuffer, texture] = createFramebuffer(gl, FRAMES_PER_RENDER);
+    this.__framebuffer = framebuffer;
+    this.__texture = texture;
+    this.__dstArray = new Float32Array(FRAMES_PER_RENDER * 4);
 
     this.__extParallel = gl.getExtension('KHR_parallel_shader_compile');
 
-    this.__offsetBuffer = createOffsetBuffer(gl, FRAMES_PER_RENDER);
+    this.__quadBuffer = createQuadBuffer(gl);
 
     this.__program = null;
     this.__programCue = null;
@@ -104,13 +103,10 @@ export class RendererImpl {
   public dispose(): void {
     const { gl } = this;
 
-    gl.deleteBuffer(this.__offsetBuffer);
+    gl.deleteBuffer(this.__quadBuffer);
 
-    for (const { bufferL, bufferR, tf } of this.__tfPool) {
-      gl.deleteBuffer(bufferL);
-      gl.deleteBuffer(bufferR);
-      gl.deleteTransformFeedback(tf);
-    }
+    gl.deleteFramebuffer(this.__framebuffer);
+    gl.deleteTexture(this.__texture);
 
     this.__textureUploader.clearTextures();
 
@@ -150,11 +146,10 @@ export class RendererImpl {
 
     const program = await lazyProgram(
       gl,
+      shaderchunkVertex,
       codeToCompile,
-      '#version 300 es\nvoid main(){discard;}',
       {
         extParallel: this.__extParallel,
-        tfVaryings: ['outL', 'outR'],
       },
     ).catch((error) => {
       this.__programCue = null;
@@ -193,15 +188,16 @@ export class RendererImpl {
   /**
    * Render and return a buffer.
    */
-  public render(tfIndex: number, first: number, count: number, uniforms: RenderUniforms): void {
-    const { gl, __program: program } = this;
-    const tfPoolEntry = this.__tfPool[tfIndex];
-    const { bufferL, bufferR, tf } = tfPoolEntry;
+  public render(first: number, count: number, uniforms: RenderUniforms): void {
+    const { gl } = this;
+    const program = this.__program;
+    const framebuffer = this.__framebuffer;
 
     if (program == null) {
       return;
     }
 
+    // Use the program
     gl.useProgram(program);
 
     // -- uniforms ---------------------------------------------------------------------------------
@@ -229,56 +225,52 @@ export class RendererImpl {
     }
 
     // -- attrib -----------------------------------------------------------------------------------
-    const attribLocation = gl.getAttribLocation(program, 'off');
+    const positionLocation = gl.getAttribLocation(program, 'position');
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.__offsetBuffer);
-    gl.enableVertexAttribArray(attribLocation);
-    gl.vertexAttribPointer(attribLocation, 1, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.__quadBuffer);
+    gl.enableVertexAttribArray(positionLocation);
+    gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+    // -- framebuffer ------------------------------------------------------------------------------
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.viewport(0, 0, FRAMES_PER_RENDER, 1);
+    gl.scissor(first, 0, count, 1);
+
+    // -- clear ------------------------------------------------------------------------------------
+    gl.clearColor(0.0, 0.0, 0.0, 1.0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
 
     // -- render -----------------------------------------------------------------------------------
-    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, tf);
-    gl.bindBufferRange(gl.TRANSFORM_FEEDBACK_BUFFER, 0, bufferL, 4 * first, 4 * count);
-    gl.bindBufferRange(gl.TRANSFORM_FEEDBACK_BUFFER, 1, bufferR, 4 * first, 4 * count);
-    gl.enable(gl.RASTERIZER_DISCARD);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
-    gl.beginTransformFeedback(gl.POINTS);
-    gl.drawArrays(gl.POINTS, first, count);
-    gl.endTransformFeedback();
-
-    gl.disable(gl.RASTERIZER_DISCARD);
-    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, null);
+    // -- cleanup ----------------------------------------------------------------------------------
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
     gl.useProgram(null);
   }
 
-  public async readBuffer(tfIndex: number): Promise<[Float32Array, Float32Array]> {
+  public async readBuffer(): Promise<[Float32Array, Float32Array]> {
     const { gl } = this;
-    const tfPoolEntry = this.__tfPool[tfIndex];
-    const { bufferL, bufferR, dstArrays } = tfPoolEntry;
+    const framebuffer = this.__framebuffer;
+    const dstArray = this.__dstArray;
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, bufferL);
-    gl.getBufferSubData(
-      gl.ARRAY_BUFFER,
-      0,
-      dstArrays[0],
-      0,
-      FRAMES_PER_RENDER,
-    );
-    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    // Bind the framebuffer
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, bufferR);
-    gl.getBufferSubData(
-      gl.ARRAY_BUFFER,
-      0,
-      dstArrays[1],
-      0,
-      FRAMES_PER_RENDER,
-    );
-    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    // Read the pixels from the framebuffer
+    gl.readPixels(0, 0, FRAMES_PER_RENDER, 1, gl.RGBA, gl.FLOAT, dstArray);
 
-    // We need to create new arrays because `dstArrays` will be reused
-    return [
-      new Float32Array(dstArrays[0]),
-      new Float32Array(dstArrays[1]),
-    ];
+    // Extract the left and right channels from the RGBA data
+    const leftChannel = new Float32Array(FRAMES_PER_RENDER);
+    const rightChannel = new Float32Array(FRAMES_PER_RENDER);
+    for (let i = 0; i < FRAMES_PER_RENDER; i++) {
+      leftChannel[i] = dstArray[i * 4 + 0]; // R channel = left
+      rightChannel[i] = dstArray[i * 4 + 1]; // G channel = right
+    }
+
+    // Unbind the framebuffer
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+    return [leftChannel, rightChannel];
   }
 }

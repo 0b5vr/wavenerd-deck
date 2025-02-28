@@ -6,7 +6,7 @@ import { TextureStore } from './TextureStore';
 import { applyMixins } from './utils/applyMixins';
 import { shaderchunkPreLines } from './renderer/shaderchunks';
 import { WavenerdDeckParam } from './WavenerdDeckParam';
-import { BLOCKS_PER_RENDER, BLOCK_SIZE, FRAMES_PER_RENDER, POOL_SIZE } from './constants';
+import { BLOCKS_PER_RENDER, BLOCK_SIZE, FRAMES_PER_RENDER } from './constants';
 import { RenderUniforms } from './renderer/RenderUniforms';
 
 interface WavenerdDeckProgram {
@@ -73,11 +73,6 @@ export class WavenerdDeck {
    * Its renderer.
    */
   private __renderer: Renderer;
-
-  /**
-   * Index for the transform feedback pool in the renderer.
-   */
-  private __tfIndex: number;
 
   /**
    * Its last compile error happened in [[WavenerdDeck.compile]].
@@ -181,7 +176,6 @@ export class WavenerdDeck {
 
     // -- renderer ---------------------------------------------------------------------------------
     this.__renderer = new Renderer(gl);
-    this.__tfIndex = 0;
 
     this.__textureStore = new TextureStore();
 
@@ -471,11 +465,9 @@ export class WavenerdDeck {
     }
 
     // -- render -----------------------------------------------------------------------------------
-    const tfIndex = this.__tfIndex = (this.__tfIndex + 1) % POOL_SIZE;
-
     if (this.__program) {
       const uniforms = this.__collectUniforms();
-      this.__renderer.render(tfIndex, 0, beginNext, uniforms);
+      this.__renderer.render(0, beginNext, uniforms);
     }
 
     // render the next program from the mid of the block
@@ -483,11 +475,11 @@ export class WavenerdDeck {
       this.applyCueImmediately();
 
       const uniforms = this.__collectUniforms();
-      this.__renderer.render(tfIndex, beginNext, FRAMES_PER_RENDER - beginNext, uniforms);
+      this.__renderer.render(beginNext, FRAMES_PER_RENDER - beginNext, uniforms);
     }
 
     // -- read buffer + update write blocks --------------------------------------------------------
-    await this.__readBuffer(tfIndex, this.__bufferWriteBlocks);
+    await this.__readBuffer(this.__bufferWriteBlocks);
     this.__bufferWriteBlocks += BLOCKS_PER_RENDER;
 
     // -- emit an event ----------------------------------------------------------------------------
@@ -575,11 +567,11 @@ export class WavenerdDeck {
     return uniforms;
   }
 
-  private async __readBuffer(tfIndex: number, bufferWriteBlocks: number): Promise<void> {
+  private async __readBuffer(bufferWriteBlocks: number): Promise<void> {
     const bufferReaderNode = this.__bufferReaderNode;
     if (bufferReaderNode == null) { return; }
 
-    const dstArrays = await this.__renderer.readBuffer(tfIndex);
+    const dstArrays = await this.__renderer.readBuffer();
 
     bufferReaderNode.write(
       0,

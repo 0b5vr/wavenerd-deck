@@ -33,12 +33,11 @@ self.onmessage = async (event: MessageEvent<RendererRequestData & { id: number }
       rendererImpl.clearTextures();
       postResponse({ id, type });
     } else if (type === 'render') {
-      const { tfIndex, first, count, uniforms } = data;
-      rendererImpl.render(tfIndex, first, count, uniforms);
+      const { first, count, uniforms } = data;
+      rendererImpl.render(first, count, uniforms);
       postResponse({ id, type });
     } else if (type === 'readBuffer') {
-      const { tfIndex: readTfIndex } = data;
-      const [arrayL, arrayR] = await rendererImpl.readBuffer(readTfIndex);
+      const [arrayL, arrayR] = await rendererImpl.readBuffer();
       postResponse({ id, type, bufferL: arrayL.buffer, bufferR: arrayR.buffer }, [arrayL.buffer, arrayR.buffer]);
     }
   } catch (error) {

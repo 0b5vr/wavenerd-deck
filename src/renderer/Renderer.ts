@@ -4,13 +4,6 @@ import { RendererResponseData } from './RendererResponseData';
 import { RendererRequestData } from './RendererRequestData';
 import { RenderUniforms } from './RenderUniforms';
 
-export interface TFPoolEntry {
-  bufferL: WebGLBuffer;
-  bufferR: WebGLBuffer;
-  tf: WebGLTransformFeedback;
-  dstArrays: [Float32Array, Float32Array];
-}
-
 export class Renderer {
   private worker: Worker;
   private messageId = 0;
@@ -74,15 +67,15 @@ export class Renderer {
   /**
    * Render and return a buffer.
    */
-  public render(tfIndex: number, first: number, count: number, uniforms: RenderUniforms): void {
-    this.__sendMessage({ type: 'render', tfIndex, first, count, uniforms }).catch(console.error);
+  public render(first: number, count: number, uniforms: RenderUniforms): void {
+    this.__sendMessage({ type: 'render', first, count, uniforms }).catch(console.error);
   }
 
   /**
    * Read buffer data from the worker.
    */
-  public async readBuffer(tfIndex: number): Promise<[Float32Array, Float32Array]> {
-    const result = await this.__sendMessage({ type: 'readBuffer', tfIndex });
+  public async readBuffer(): Promise<[Float32Array, Float32Array]> {
+    const result = await this.__sendMessage({ type: 'readBuffer' });
     return [new Float32Array(result.bufferL), new Float32Array(result.bufferR)];
   }
 
