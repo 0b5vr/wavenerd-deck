@@ -7,6 +7,7 @@ import { applyMixins } from './utils/applyMixins';
 import { shaderchunkPreLines } from './renderer/shaderchunks';
 import { WavenerdDeckParam } from './WavenerdDeckParam';
 import { BLOCKS_PER_RENDER, BLOCK_SIZE, FRAMES_PER_RENDER, POOL_SIZE } from './constants';
+import { RenderUniforms } from './renderer/RenderUniforms';
 
 interface WavenerdDeckProgram {
   code: string;
@@ -473,16 +474,16 @@ export class WavenerdDeck {
     const tfIndex = this.__tfIndex = (this.__tfIndex + 1) % POOL_SIZE;
 
     if (this.__program) {
-      this.__updateUniforms();
-      this.__renderer.render(tfIndex, 0, beginNext);
+      const uniforms = this.__collectUniforms();
+      this.__renderer.render(tfIndex, 0, beginNext, uniforms);
     }
 
     // render the next program from the mid of the block
     if (beginNext < FRAMES_PER_RENDER && this.__programCue != null) {
       this.applyCueImmediately();
 
-      this.__updateUniforms();
-      this.__renderer.render(tfIndex, beginNext, FRAMES_PER_RENDER - beginNext);
+      const uniforms = this.__collectUniforms();
+      this.__renderer.render(tfIndex, beginNext, FRAMES_PER_RENDER - beginNext, uniforms);
     }
 
     // -- read buffer + update write blocks --------------------------------------------------------
@@ -509,7 +510,7 @@ export class WavenerdDeck {
     }
   }
 
-  private __updateUniforms(): void {
+  private __collectUniforms(): RenderUniforms {
     const {
       time,
       beatSeconds,
@@ -521,62 +522,57 @@ export class WavenerdDeck {
     } = this.beatManager;
     const { sampleRate } = this;
 
-    // -- uniforms - params ------------------------------------------------------------------------
+    const uniforms: RenderUniforms = {
+      uniform1f: [],
+      uniform4f: [],
+      uniformTexture: [],
+    };
+
+    // -- common -----------------------------------------------------------------------------------
+    uniforms.uniform1f.push(
+      { name: 'bpm', value: this.bpm },
+      { name: '_deltaSample', value: 1.0 / sampleRate },
+      { name: '_framesPerRender', value: FRAMES_PER_RENDER },
+    );
+
+    uniforms.uniform4f.push(
+      { name: 'timeLength', value: [beatSeconds, barSeconds, sixteenBarSeconds, 1E16] },
+      { name: '_timeHead', value: [beat, bar, sixteenBar, time] },
+    );
+
+    // -- params -----------------------------------------------------------------------------------
     for (const [name, param] of this.__params) {
-      this.__renderer.uniform4f(
-        'param_' + name,
-        param.y0,
-        param.y1,
-        param.y2,
-        param.y3,
-      );
+      uniforms.uniform4f.push({
+        name: 'param_' + name,
+        value: [param.y0, param.y1, param.y2, param.y3],
+      });
     }
 
-    // -- uniforms - samplers ----------------------------------------------------------------------
+    // -- textures ---------------------------------------------------------------------------------
     let textureUnit = 0;
-
     const { requiredTextures } = this.__program!;
 
     for (const textureName of requiredTextures) {
       const textureEntry = this.__textureStore.get(textureName);
 
       if (textureEntry != null) {
-        this.__renderer.uniformTexture(
-          textureName,
-          textureUnit,
-          textureName,
-        );
-        textureUnit++;
+        uniforms.uniformTexture.push({
+          name: textureName,
+          unit: textureUnit,
+          textureId: textureName,
+        });
 
         const meta = textureEntry.meta;
-        this.__renderer.uniform4f(
-          textureName + '_meta',
-          meta[0],
-          meta[1],
-          meta[2],
-          meta[3],
-        );
+        uniforms.uniform4f.push({
+          name: textureName + '_meta',
+          value: [meta[0], meta[1], meta[2], meta[3]],
+        });
+
+        textureUnit++;
       }
     }
 
-    // -- uniforms - others ------------------------------------------------------------------------
-    this.__renderer.uniform1f('bpm', this.bpm);
-    this.__renderer.uniform1f('_deltaSample', 1.0 / sampleRate);
-    this.__renderer.uniform1f('_framesPerRender', FRAMES_PER_RENDER);
-    this.__renderer.uniform4f(
-      'timeLength',
-      beatSeconds,
-      barSeconds,
-      sixteenBarSeconds,
-      1E16,
-    );
-    this.__renderer.uniform4f(
-      '_timeHead',
-      beat,
-      bar,
-      sixteenBar,
-      time,
-    );
+    return uniforms;
   }
 
   private async __readBuffer(tfIndex: number, bufferWriteBlocks: number): Promise<void> {

@@ -5,6 +5,7 @@ import { lazyProgram } from './utils/lazyProgram';
 import { TextureUploader } from './TextureUploader';
 import { TextureStoreEntry } from '../TextureStoreEntry';
 import { POOL_SIZE, FRAMES_PER_RENDER } from '../constants';
+import { RenderUniforms } from './RenderUniforms';
 
 // Internal TF pool entry for the worker
 interface TFPoolEntry {
@@ -190,66 +191,41 @@ export class RendererImpl {
   }
 
   /**
-   * Set an uniform1f to the current program.
-   */
-  public uniform1f(name: string, value: number): void {
-    const { gl, __program: program } = this;
-    if (program == null) { return; }
-
-    const location = gl.getUniformLocation(program, name);
-
-    gl.useProgram(program);
-    gl.uniform1f(location, value);
-    gl.useProgram(null);
-  }
-
-  /**
-   * Set an uniform4f to the current program.
-   */
-  public uniform4f(name: string, ...value: [number, number, number, number]): void {
-    const { gl, __program: program } = this;
-    if (program == null) { return; }
-
-    const location = gl.getUniformLocation(program, name);
-
-    gl.useProgram(program);
-    gl.uniform4f(location, ...value);
-    gl.useProgram(null);
-  }
-
-  /**
-   * Set a texture uniform to the current program.
-   */
-  public uniformTexture(name: string, unit: number, textureId: string): void {
-    const { gl, __program: program } = this;
-    if (program == null) { return; }
-
-    const location = gl.getUniformLocation(program, name);
-    const texture = this.__textureUploader.getTexture(textureId);
-
-    if (texture == null) {
-      // no texture found
-      return;
-    }
-
-    gl.activeTexture(gl.TEXTURE0 + unit);
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-
-    gl.useProgram(program);
-    gl.uniform1i(location, unit);
-    gl.useProgram(null);
-  }
-
-  /**
    * Render and return a buffer.
    */
-  public render(tfIndex: number, first: number, count: number): void {
+  public render(tfIndex: number, first: number, count: number, uniforms: RenderUniforms): void {
     const { gl, __program: program } = this;
     const tfPoolEntry = this.__tfPool[tfIndex];
     const { bufferL, bufferR, tf } = tfPoolEntry;
 
     if (program == null) {
       return;
+    }
+
+    gl.useProgram(program);
+
+    // -- uniforms ---------------------------------------------------------------------------------
+    for (const { name, value } of uniforms.uniform1f) {
+      const location = gl.getUniformLocation(program, name);
+      gl.uniform1f(location, value);
+    }
+
+    for (const { name, value } of uniforms.uniform4f) {
+      const location = gl.getUniformLocation(program, name);
+      gl.uniform4f(location, ...value);
+    }
+
+    // Apply texture uniforms
+    for (const { name, unit, textureId } of uniforms.uniformTexture) {
+      const texture = this.__textureUploader.getTexture(textureId);
+
+      if (texture != null) {
+        gl.activeTexture(gl.TEXTURE0 + unit);
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+
+        const location = gl.getUniformLocation(program, name);
+        gl.uniform1i(location, unit);
+      }
     }
 
     // -- attrib -----------------------------------------------------------------------------------
@@ -260,8 +236,6 @@ export class RendererImpl {
     gl.vertexAttribPointer(attribLocation, 1, gl.FLOAT, false, 0, 0);
 
     // -- render -----------------------------------------------------------------------------------
-    gl.useProgram(program);
-
     gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, tf);
     gl.bindBufferRange(gl.TRANSFORM_FEEDBACK_BUFFER, 0, bufferL, 4 * first, 4 * count);
     gl.bindBufferRange(gl.TRANSFORM_FEEDBACK_BUFFER, 1, bufferR, 4 * first, 4 * count);

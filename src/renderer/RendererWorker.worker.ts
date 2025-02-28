@@ -21,17 +21,6 @@ self.onmessage = async (event: MessageEvent<RendererRequestData & { id: number }
     } else if (type === 'applyCue') {
       rendererImpl.applyCue();
       postResponse({ id, type });
-    } else if (type === 'uniform1f') {
-      rendererImpl.uniform1f(data.name, data.value);
-      postResponse({ id, type });
-    } else if (type === 'uniform4f') {
-      const [v0, v1, v2, v3] = data.value;
-      rendererImpl.uniform4f(data.name, v0, v1, v2, v3);
-      postResponse({ id, type });
-    } else if (type === 'uniformTexture') {
-      const { name, unit, textureId } = data;
-      rendererImpl.uniformTexture(name, unit, textureId);
-      postResponse({ id, type });
     } else if (type === 'uploadTexture') {
       const { textureId, entry } = data;
       rendererImpl.uploadTexture(textureId, entry);
@@ -44,8 +33,8 @@ self.onmessage = async (event: MessageEvent<RendererRequestData & { id: number }
       rendererImpl.clearTextures();
       postResponse({ id, type });
     } else if (type === 'render') {
-      const { tfIndex, first, count } = data;
-      rendererImpl.render(tfIndex, first, count);
+      const { tfIndex, first, count, uniforms } = data;
+      rendererImpl.render(tfIndex, first, count, uniforms);
       postResponse({ id, type });
     } else if (type === 'readBuffer') {
       const { tfIndex: readTfIndex } = data;

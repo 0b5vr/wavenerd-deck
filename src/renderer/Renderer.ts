@@ -2,6 +2,7 @@
 import Worker from './RendererWorker.worker';
 import { RendererResponseData } from './RendererResponseData';
 import { RendererRequestData } from './RendererRequestData';
+import { RenderUniforms } from './RenderUniforms';
 
 export interface TFPoolEntry {
   bufferL: WebGLBuffer;
@@ -50,28 +51,6 @@ export class Renderer {
   }
 
   /**
-   * Set an uniform1f to the current program.
-   */
-  public uniform1f(name: string, value: number): void {
-    this.__sendMessage({ type: 'uniform1f', name, value }).catch(console.error);
-  }
-
-  /**
-   * Set an uniform4f to the current program.
-   */
-  public uniform4f(name: string, ...value: [number, number, number, number]): void {
-    this.__sendMessage({ type: 'uniform4f', name, value }).catch(console.error);
-  }
-
-  /**
-   * Set a texture uniform to the current program.
-   */
-  public uniformTexture(name: string, unit: number, textureId: string): void {
-    // Send the texture ID to the worker
-    this.__sendMessage({ type: 'uniformTexture', name, unit, textureId }).catch(console.error);
-  }
-
-  /**
    * Upload a texture to the worker.
    */
   public uploadTexture(textureId: string, entry: any): void {
@@ -95,8 +74,8 @@ export class Renderer {
   /**
    * Render and return a buffer.
    */
-  public render(tfIndex: number, first: number, count: number): void {
-    this.__sendMessage({ type: 'render', tfIndex, first, count }).catch(console.error);
+  public render(tfIndex: number, first: number, count: number, uniforms: RenderUniforms): void {
+    this.__sendMessage({ type: 'render', tfIndex, first, count, uniforms }).catch(console.error);
   }
 
   /**
