@@ -1,24 +1,19 @@
 export interface TextureStoreSampleEntry {
   type: 'sample';
-  width: number;
-  height: number;
-  sampleRate: number;
-  duration: number;
-  texture: WebGLTexture;
+  meta: [width: number, height: number, sampleRate: number, duration: number];
+  audioBuffer: Float32Array[];
 }
 
 export interface TextureStoreWavetableEntry {
   type: 'wavetable';
-  width: number;
-  height: number;
-  texture: WebGLTexture;
+  meta: [width: number, height: number, _: number, _: number];
+  wavetableBuffer: Float32Array;
 }
 
 export interface TextureStoreImageEntry {
   type: 'image';
-  width: number;
-  height: number;
-  texture: WebGLTexture;
+  meta: [width: number, height: number, _: number, _: number];
+  imageBuffer: Uint8ClampedArray;
 }
 
 export type TextureStoreEntry =

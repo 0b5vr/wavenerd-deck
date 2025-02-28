@@ -1,17 +1,32 @@
-import { Pool, arraySerial } from '@0b5vr/experimental';
+import { arraySerial } from '@0b5vr/experimental';
 import { shaderchunkPost, shaderchunkPre } from './shaderchunks';
-import { glWaitGPUCommandsCompleteAsync } from './utils/glWaitGPUCommandsCompleteAsync';
 import { glslBinaryLiterals } from './glslBinaryLiterals';
 import { lazyProgram } from './utils/lazyProgram';
+import { TextureUploader } from './TextureUploader';
+import { TextureStoreEntry } from '../TextureStoreEntry';
 
 const BLOCK_SIZE = 128;
 const POOL_SIZE = 128;
+const BLOCKS_PER_RENDER = 16;
+const FRAMES_PER_RENDER = BLOCK_SIZE * BLOCKS_PER_RENDER;
 
-export interface TFPoolEntry {
+// Internal TF pool entry for the worker
+interface TFPoolEntry {
   bufferL: WebGLBuffer;
   bufferR: WebGLBuffer;
   tf: WebGLTransformFeedback;
-  dstArrays: [ Float32Array, Float32Array ];
+  dstArrays: [Float32Array, Float32Array];
+}
+
+// Texture data interface for transferring texture data
+export interface TextureData {
+  type: 'image' | 'wavetable' | 'sample';
+  width: number;
+  height: number;
+  data: ArrayBuffer;
+  format?: number; // gl.RGBA, gl.RGB, etc.
+  internalFormat?: number; // gl.RGBA8, gl.RGB8, etc.
+  dataType?: number; // gl.UNSIGNED_BYTE, gl.FLOAT, etc.
 }
 
 // -- utils ----------------------------------------------------------------------------------------
@@ -50,47 +65,40 @@ function createTFPoolEntry(gl: WebGL2RenderingContext, length: number): TFPoolEn
   const dstArrays = [
     new Float32Array(length),
     new Float32Array(length),
-  ] as [ Float32Array, Float32Array ];
+  ] as [Float32Array, Float32Array];
 
   return { bufferL, bufferR, tf, dstArrays };
 }
 
 // -- class ----------------------------------------------------------------------------------------
-export class Renderer {
+export class RendererImpl {
   public readonly gl: WebGL2RenderingContext;
-  public readonly blocksPerRender: number;
-
-  public useSync: boolean;
 
   public readonly __extParallel: any;
-  public readonly __tfPool: Pool<TFPoolEntry>;
-
-  public get framesPerRender(): number {
-    return BLOCK_SIZE * this.blocksPerRender;
-  }
+  private readonly __tfPool: TFPoolEntry[];
+  private __textureUploader: TextureUploader;
 
   private __offsetBuffer: WebGLBuffer;
 
   private __program: WebGLProgram | null;
   private __programCue: WebGLProgram | null;
 
-  public constructor(gl: WebGL2RenderingContext, blocksPerRender: number) {
-    this.blocksPerRender = blocksPerRender;
-
+  public constructor(gl: WebGL2RenderingContext) {
     this.gl = gl;
 
-    this.useSync = false;
-
-    this.__tfPool = new Pool(arraySerial(POOL_SIZE).map(() => (
-      createTFPoolEntry(gl, this.framesPerRender)
-    )));
+    this.__tfPool = arraySerial(POOL_SIZE).map(() => (
+      createTFPoolEntry(gl, FRAMES_PER_RENDER)
+    ));
 
     this.__extParallel = gl.getExtension('KHR_parallel_shader_compile');
 
-    this.__offsetBuffer = createOffsetBuffer(gl, this.framesPerRender);
+    this.__offsetBuffer = createOffsetBuffer(gl, FRAMES_PER_RENDER);
 
     this.__program = null;
     this.__programCue = null;
+
+    // Initialize texture uploader
+    this.__textureUploader = new TextureUploader(gl);
   }
 
   /**
@@ -101,21 +109,37 @@ export class Renderer {
 
     gl.deleteBuffer(this.__offsetBuffer);
 
-    for (const { bufferL, bufferR, tf } of this.__tfPool.array) {
+    for (const { bufferL, bufferR, tf } of this.__tfPool) {
       gl.deleteBuffer(bufferL);
       gl.deleteBuffer(bufferR);
       gl.deleteTransformFeedback(tf);
     }
+
+    this.__textureUploader.clearTextures();
 
     gl.deleteProgram(this.__program);
     gl.deleteProgram(this.__programCue);
   }
 
   /**
-   * Get a tfPoolEntry.
+   * Upload a texture from a texture entry.
    */
-  public getNextTFPoolEntry(): TFPoolEntry {
-    return this.__tfPool.next();
+  public uploadTexture(id: string, entry: TextureStoreEntry): WebGLTexture {
+    return this.__textureUploader.uploadTexture(id, entry);
+  }
+
+  /**
+   * Delete a texture by ID.
+   */
+  public deleteTexture(id: string): boolean {
+    return this.__textureUploader.deleteTexture(id);
+  }
+
+  /**
+   * Clear all textures.
+   */
+  public clearTextures(): void {
+    this.__textureUploader.clearTextures();
   }
 
   /**
@@ -137,7 +161,9 @@ export class Renderer {
       },
     ).catch((error) => {
       this.__programCue = null;
-      gl.deleteProgram(this.__programCue);
+      if (this.__programCue) {
+        gl.deleteProgram(this.__programCue);
+      }
 
       throw error;
     });
@@ -184,7 +210,7 @@ export class Renderer {
   /**
    * Set an uniform4f to the current program.
    */
-  public uniform4f(name: string, ...value: [ number, number, number, number ]): void {
+  public uniform4f(name: string, ...value: [number, number, number, number]): void {
     const { gl, __program: program } = this;
     if (program == null) { return; }
 
@@ -198,11 +224,17 @@ export class Renderer {
   /**
    * Set a texture uniform to the current program.
    */
-  public uniformTexture(name: string, unit: number, texture: WebGLTexture): void {
+  public uniformTexture(name: string, unit: number, textureId: string): void {
     const { gl, __program: program } = this;
     if (program == null) { return; }
 
     const location = gl.getUniformLocation(program, name);
+    const texture = this.__textureUploader.getTexture(textureId);
+
+    if (texture == null) {
+      // no texture found
+      return;
+    }
 
     gl.activeTexture(gl.TEXTURE0 + unit);
     gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -215,8 +247,9 @@ export class Renderer {
   /**
    * Render and return a buffer.
    */
-  public render(tfPoolEntry: TFPoolEntry, first: number, count: number): void {
+  public render(tfIndex: number, first: number, count: number): void {
     const { gl, __program: program } = this;
+    const tfPoolEntry = this.__tfPool[tfIndex];
     const { bufferL, bufferR, tf } = tfPoolEntry;
 
     if (program == null) {
@@ -247,12 +280,10 @@ export class Renderer {
     gl.useProgram(null);
   }
 
-  public async readBuffer({ bufferL, bufferR, dstArrays }: TFPoolEntry): Promise<void> {
+  public async readBuffer(tfIndex: number): Promise<[Float32Array, Float32Array]> {
     const { gl } = this;
-
-    if (this.useSync) {
-      await glWaitGPUCommandsCompleteAsync(gl);
-    }
+    const tfPoolEntry = this.__tfPool[tfIndex];
+    const { bufferL, bufferR, dstArrays } = tfPoolEntry;
 
     gl.bindBuffer(gl.ARRAY_BUFFER, bufferL);
     gl.getBufferSubData(
@@ -260,7 +291,7 @@ export class Renderer {
       0,
       dstArrays[0],
       0,
-      this.framesPerRender,
+      FRAMES_PER_RENDER,
     );
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
@@ -270,8 +301,14 @@ export class Renderer {
       0,
       dstArrays[1],
       0,
-      this.framesPerRender,
+      FRAMES_PER_RENDER,
     );
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+    // We need to create new arrays because `dstArrays` will be reused
+    return [
+      new Float32Array(dstArrays[0]),
+      new Float32Array(dstArrays[1]),
+    ];
   }
 }

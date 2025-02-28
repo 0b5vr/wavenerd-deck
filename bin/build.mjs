@@ -3,6 +3,7 @@
 import path from 'path';
 import esbuild from 'esbuild';
 import packageJson from '../package.json' with { type: 'json' };
+import inlineWorkerPlugin from 'esbuild-plugin-inline-worker';
 
 // == env ==========================================================================================
 const PORT = parseInt(process.env.PORT ?? 3800, 10);
@@ -36,7 +37,7 @@ function createBuildOptions(format, dev) {
     bundle: true,
     outfile: path.resolve(dirname, '../dist', filename),
     format,
-    target: 'es6',
+    target: 'es2020',
     globalName: 'WAVENERD_DECK',
     sourcemap: true,
     minify: !dev,
@@ -46,6 +47,9 @@ function createBuildOptions(format, dev) {
     loader: {
       '.worklet.js': 'text',
     },
+    plugins: [
+      inlineWorkerPlugin(),
+    ],
   };
 
   return buildOptions;

@@ -1,13 +1,16 @@
-import { Renderer, TFPoolEntry } from './Renderer';
+import { Renderer } from './renderer/Renderer';
 import { BeatManager } from './BeatManager';
 import { BufferReaderNode } from './BufferReaderNode';
 import { EventEmittable } from './utils/EventEmittable';
 import { TextureStore } from './TextureStore';
 import { applyMixins } from './utils/applyMixins';
-import { shaderchunkPreLines } from './shaderchunks';
+import { shaderchunkPreLines } from './renderer/shaderchunks';
 import { WavenerdDeckParam } from './WavenerdDeckParam';
 
 const BLOCK_SIZE = 128;
+const POOL_SIZE = 128;
+const BLOCKS_PER_RENDER = 16;
+const FRAMES_PER_RENDER = BLOCK_SIZE * BLOCKS_PER_RENDER;
 
 interface WavenerdDeckProgram {
   code: string;
@@ -47,25 +50,6 @@ export class WavenerdDeck {
   }
 
   /**
-   * Blocks per a render.
-   */
-  private __blocksPerRender: number;
-
-  /**
-   * Blocks per a render.
-   */
-  public get blocksPerRender(): number {
-    return this.__blocksPerRender;
-  }
-
-  /**
-   * Frames per a render
-   */
-  public get framesPerRender(): number {
-    return BLOCK_SIZE * this.__blocksPerRender;
-  }
-
-  /**
    * Whether the wavenerd deck is playing or not.
    */
   private __isPlaying: boolean;
@@ -89,20 +73,14 @@ export class WavenerdDeck {
   }
 
   /**
-   * Whether it should use `SYNC_GPU_COMMANDS_COMPLETE` or not.
-   */
-  public get useSync(): boolean {
-    return this.__renderer.useSync;
-  }
-
-  public set useSync(value: boolean) {
-    this.__renderer.useSync = value;
-  }
-
-  /**
    * Its renderer.
    */
   private __renderer: Renderer;
+
+  /**
+   * Index for the transform feedback pool in the renderer.
+   */
+  private __tfIndex: number;
 
   /**
    * Its last compile error happened in [[WavenerdDeck.compile]].
@@ -163,14 +141,7 @@ export class WavenerdDeck {
 
   private __params = new Map<string, WavenerdDeckParam>();
 
-  private __selfTextureStore: TextureStore;
-  private get __textureStore(): TextureStore {
-    if (this.hostDeck) {
-      return this.hostDeck.__textureStore;
-    }
-
-    return this.__selfTextureStore;
-  }
+  private __textureStore: TextureStore;
 
   /**
    * Constructor of the WavenerdDeck.
@@ -180,20 +151,17 @@ export class WavenerdDeck {
     audio,
     hostDeck,
     latencyBlocks,
-    blocksPerRender,
     bpm,
   }: {
     gl: WebGL2RenderingContext;
     audio: AudioContext;
     hostDeck?: WavenerdDeck;
     latencyBlocks?: number;
-    blocksPerRender?: number;
     bpm?: number;
   }) {
     this.__isPlaying = false;
 
     this.latencyBlocks = latencyBlocks ?? 16;
-    this.__blocksPerRender = blocksPerRender ?? 16;
 
     // -- host deck --------------------------------------------------------------------------------
     if (hostDeck) {
@@ -215,9 +183,23 @@ export class WavenerdDeck {
     }
 
     // -- renderer ---------------------------------------------------------------------------------
-    this.__renderer = new Renderer(gl, this.blocksPerRender);
+    this.__renderer = new Renderer(gl);
+    this.__tfIndex = 0;
 
-    this.__selfTextureStore = new TextureStore(gl);
+    this.__textureStore = new TextureStore();
+
+    // Listen for texture events from the TextureStore
+    this.__textureStore.on('load', ({ id, entry }) => {
+      this.__renderer.uploadTexture(id, entry);
+    });
+
+    this.__textureStore.on('delete', ({ id }) => {
+      this.__renderer.deleteTexture(id);
+    });
+
+    this.__textureStore.on('dispose', () => {
+      this.__renderer.clearTextures();
+    });
 
     this.__program = null;
     this.__programCue = null;
@@ -243,7 +225,7 @@ export class WavenerdDeck {
     this.__setCueStatus('none');
 
     this.__renderer.dispose();
-    this.__selfTextureStore.dispose();
+    this.__textureStore.dispose();
 
     this.__bufferReaderNode?.disconnect();
   }
@@ -398,7 +380,7 @@ export class WavenerdDeck {
    */
   public loadImage(
     name: string,
-    image: TexImageSource & { width: number; height: number },
+    image: HTMLImageElement,
   ): void {
     const id = `image_${name}`;
     this.__textureStore.loadImage(id, image);
@@ -426,10 +408,11 @@ export class WavenerdDeck {
     const audioBuffer = await this.__audio.decodeAudioData(inputBuffer);
 
     const id = `sample_${name}`;
-    const { duration, sampleRate } = this.__textureStore.loadSample(id, audioBuffer);
+    this.__textureStore.loadSample(id, audioBuffer);
 
     this.__addRequiredTexture(id);
 
+    const { duration, sampleRate } = audioBuffer; // is it really needed?
     this.__emit('loadSample', { name, duration, sampleRate });
   }
 
@@ -449,7 +432,7 @@ export class WavenerdDeck {
     if (bufferReaderNode == null) { return; }
 
     const { readBlocks } = bufferReaderNode;
-    const { sampleRate, blocksPerRender, framesPerRender } = this;
+    const { sampleRate } = this;
 
     this.__bufferReaderNode?.setActive(this.isPlaying);
 
@@ -467,8 +450,8 @@ export class WavenerdDeck {
     // we're very behind
     if (blockAhead < 0) {
       this.__bufferWriteBlocks = (
-        Math.floor(readBlocks / blocksPerRender) + 1
-      ) * blocksPerRender;
+        Math.floor(readBlocks / BLOCKS_PER_RENDER) + 1
+      ) * BLOCKS_PER_RENDER;
     }
 
     const genTime = BLOCK_SIZE * (this.__bufferWriteBlocks - this.blockOffset) / sampleRate;
@@ -480,35 +463,35 @@ export class WavenerdDeck {
     // -- should I process the next program? -------------------------------------------------------
     let beginNext = this.__programSwapTime != null
       ? Math.floor((this.__programSwapTime - genTime) * sampleRate)
-      : framesPerRender;
-    beginNext = Math.min(beginNext, framesPerRender);
+      : FRAMES_PER_RENDER;
+    beginNext = Math.min(beginNext, FRAMES_PER_RENDER);
 
     // -- swap the program from first --------------------------------------------------------------
     if (beginNext < 0) {
       this.applyCueImmediately();
 
-      beginNext = framesPerRender;
+      beginNext = FRAMES_PER_RENDER;
     }
 
     // -- render -----------------------------------------------------------------------------------
-    const tfPoolEntry = this.__renderer.getNextTFPoolEntry();
+    const tfIndex = this.__tfIndex = (this.__tfIndex + 1) % POOL_SIZE;
 
     if (this.__program) {
       this.__updateUniforms();
-      this.__renderer.render(tfPoolEntry, 0, beginNext);
+      this.__renderer.render(tfIndex, 0, beginNext);
     }
 
     // render the next program from the mid of the block
-    if (beginNext < framesPerRender && this.__programCue != null) {
+    if (beginNext < FRAMES_PER_RENDER && this.__programCue != null) {
       this.applyCueImmediately();
 
       this.__updateUniforms();
-      this.__renderer.render(tfPoolEntry, beginNext, framesPerRender - beginNext);
+      this.__renderer.render(tfIndex, beginNext, FRAMES_PER_RENDER - beginNext);
     }
 
     // -- read buffer + update write blocks --------------------------------------------------------
-    await this.__readBuffer(tfPoolEntry, this.__bufferWriteBlocks);
-    this.__bufferWriteBlocks += this.blocksPerRender;
+    await this.__readBuffer(tfIndex, this.__bufferWriteBlocks);
+    this.__bufferWriteBlocks += BLOCKS_PER_RENDER;
 
     // -- emit an event ----------------------------------------------------------------------------
     this.__emit('update');
@@ -565,29 +548,17 @@ export class WavenerdDeck {
         this.__renderer.uniformTexture(
           textureName,
           textureUnit,
-          textureEntry.texture,
+          textureName,
         );
         textureUnit++;
 
-        const meta = (
-          textureEntry.type === 'sample'
-            ? [
-                textureEntry.width,
-                textureEntry.height,
-                textureEntry.sampleRate,
-                textureEntry.duration,
-              ]
-            : [
-                textureEntry.width,
-                textureEntry.height,
-                0,
-                0,
-              ]
-        ) as [ number, number, number, number ];
-
+        const meta = textureEntry.meta;
         this.__renderer.uniform4f(
           textureName + '_meta',
-          ...meta,
+          meta[0],
+          meta[1],
+          meta[2],
+          meta[3],
         );
       }
     }
@@ -595,7 +566,7 @@ export class WavenerdDeck {
     // -- uniforms - others ------------------------------------------------------------------------
     this.__renderer.uniform1f('bpm', this.bpm);
     this.__renderer.uniform1f('_deltaSample', 1.0 / sampleRate);
-    this.__renderer.uniform1f('_framesPerRender', this.framesPerRender);
+    this.__renderer.uniform1f('_framesPerRender', FRAMES_PER_RENDER);
     this.__renderer.uniform4f(
       'timeLength',
       beatSeconds,
@@ -612,24 +583,24 @@ export class WavenerdDeck {
     );
   }
 
-  private async __readBuffer(tfPoolEntry: TFPoolEntry, bufferWriteBlocks: number): Promise<void> {
+  private async __readBuffer(tfIndex: number, bufferWriteBlocks: number): Promise<void> {
     const bufferReaderNode = this.__bufferReaderNode;
     if (bufferReaderNode == null) { return; }
 
-    await this.__renderer.readBuffer(tfPoolEntry);
+    const dstArrays = await this.__renderer.readBuffer(tfIndex);
 
     bufferReaderNode.write(
       0,
       bufferWriteBlocks,
       0,
-      tfPoolEntry.dstArrays[0].subarray(0, this.framesPerRender),
+      dstArrays[0].subarray(0, FRAMES_PER_RENDER),
     );
 
     bufferReaderNode.write(
       1,
       bufferWriteBlocks,
       0,
-      tfPoolEntry.dstArrays[1].subarray(0, this.framesPerRender),
+      dstArrays[1].subarray(0, FRAMES_PER_RENDER),
     );
   }
 
