@@ -6,7 +6,7 @@ import { TextureStore } from './TextureStore';
 import { applyMixins } from './utils/applyMixins';
 import { shaderchunkPreLines } from './renderer/shaderchunks';
 import { WavenerdDeckParam } from './WavenerdDeckParam';
-import { BLOCKS_PER_RENDER, BLOCK_SIZE, FRAMES_PER_RENDER } from './constants';
+import { BLOCK_SIZE } from './constants';
 import { RenderUniforms } from './renderer/RenderUniforms';
 
 interface WavenerdDeckProgram {
@@ -136,6 +136,37 @@ export class WavenerdDeck {
   private __textureStore: TextureStore;
 
   /**
+   * The number of blocks that will be processed per render call.
+   */
+  private __blocksPerRender: number;
+
+  /**
+   * The number of blocks that will be processed per render call.
+   */
+  public get blocksPerRender(): number {
+    return this.__blocksPerRender;
+  }
+
+  /**
+   * Set the number of blocks that will be processed per render call.
+   * This will regenerate stuff like framebuffers.
+   */
+  public set blocksPerRender(value: number) {
+    if (this.__blocksPerRender === value) return;
+
+    this.__blocksPerRender = value;
+
+    this.__renderer.updateBlocksPerRender(value);
+  }
+
+  /**
+   * The number of frames that will be processed per render call.
+   */
+  public get framesPerRender(): number {
+    return BLOCK_SIZE * this.__blocksPerRender;
+  }
+
+  /**
    * Constructor of the WavenerdDeck.
    */
   public constructor({
@@ -143,17 +174,20 @@ export class WavenerdDeck {
     audio,
     hostDeck,
     latencyBlocks,
+    blocksPerRender,
     bpm,
   }: {
     gl: WebGL2RenderingContext;
     audio: AudioContext;
     hostDeck?: WavenerdDeck;
     latencyBlocks?: number;
+    blocksPerRender?: number;
     bpm?: number;
   }) {
     this.__isPlaying = false;
 
     this.latencyBlocks = latencyBlocks ?? 16;
+    this.__blocksPerRender = blocksPerRender ?? 16;
 
     // -- host deck --------------------------------------------------------------------------------
     if (hostDeck) {
@@ -175,7 +209,7 @@ export class WavenerdDeck {
     }
 
     // -- renderer ---------------------------------------------------------------------------------
-    this.__renderer = new Renderer(gl);
+    this.__renderer = new Renderer(gl, { blocksPerRender });
 
     this.__textureStore = new TextureStore();
 
@@ -423,7 +457,7 @@ export class WavenerdDeck {
     if (bufferReaderNode == null) { return; }
 
     const { readBlocks } = bufferReaderNode;
-    const { sampleRate } = this;
+    const { sampleRate, blocksPerRender, framesPerRender } = this;
 
     this.__bufferReaderNode?.setActive(this.isPlaying);
 
@@ -441,8 +475,8 @@ export class WavenerdDeck {
     // we're very behind
     if (blockAhead < 0) {
       this.__bufferWriteBlocks = (
-        Math.floor(readBlocks / BLOCKS_PER_RENDER) + 1
-      ) * BLOCKS_PER_RENDER;
+        Math.floor(readBlocks / blocksPerRender) + 1
+      ) * blocksPerRender;
     }
 
     const genTime = BLOCK_SIZE * (this.__bufferWriteBlocks - this.blockOffset) / sampleRate;
@@ -454,14 +488,14 @@ export class WavenerdDeck {
     // -- should I process the next program? -------------------------------------------------------
     let beginNext = this.__programSwapTime != null
       ? Math.floor((this.__programSwapTime - genTime) * sampleRate)
-      : FRAMES_PER_RENDER;
-    beginNext = Math.min(beginNext, FRAMES_PER_RENDER);
+      : framesPerRender;
+    beginNext = Math.min(beginNext, framesPerRender);
 
     // -- swap the program from first --------------------------------------------------------------
     if (beginNext < 0) {
       this.applyCueImmediately();
 
-      beginNext = FRAMES_PER_RENDER;
+      beginNext = framesPerRender;
     }
 
     // -- render -----------------------------------------------------------------------------------
@@ -471,16 +505,16 @@ export class WavenerdDeck {
     }
 
     // render the next program from the mid of the block
-    if (beginNext < FRAMES_PER_RENDER && this.__programCue != null) {
+    if (beginNext < framesPerRender && this.__programCue != null) {
       this.applyCueImmediately();
 
       const uniforms = this.__collectUniforms();
-      this.__renderer.render(beginNext, FRAMES_PER_RENDER - beginNext, uniforms);
+      this.__renderer.render(beginNext, framesPerRender - beginNext, uniforms);
     }
 
     // -- read buffer + update write blocks --------------------------------------------------------
     await this.__readBuffer(this.__bufferWriteBlocks);
-    this.__bufferWriteBlocks += BLOCKS_PER_RENDER;
+    this.__bufferWriteBlocks += blocksPerRender;
 
     // -- emit an event ----------------------------------------------------------------------------
     this.__emit('update');
@@ -512,7 +546,7 @@ export class WavenerdDeck {
       bar,
       sixteenBar,
     } = this.beatManager;
-    const { sampleRate } = this;
+    const { sampleRate, framesPerRender } = this;
 
     const uniforms: RenderUniforms = {
       uniform1f: [],
@@ -524,7 +558,7 @@ export class WavenerdDeck {
     uniforms.uniform1f.push(
       { name: 'bpm', value: this.bpm },
       { name: '_deltaSample', value: 1.0 / sampleRate },
-      { name: '_framesPerRender', value: FRAMES_PER_RENDER },
+      { name: '_framesPerRender', value: framesPerRender },
     );
 
     uniforms.uniform4f.push(
@@ -568,6 +602,8 @@ export class WavenerdDeck {
   }
 
   private async __readBuffer(bufferWriteBlocks: number): Promise<void> {
+    const { framesPerRender } = this;
+
     const bufferReaderNode = this.__bufferReaderNode;
     if (bufferReaderNode == null) { return; }
 
@@ -577,14 +613,14 @@ export class WavenerdDeck {
       0,
       bufferWriteBlocks,
       0,
-      dstArrays[0].subarray(0, FRAMES_PER_RENDER),
+      dstArrays[0].subarray(0, framesPerRender),
     );
 
     bufferReaderNode.write(
       1,
       bufferWriteBlocks,
       0,
-      dstArrays[1].subarray(0, FRAMES_PER_RENDER),
+      dstArrays[1].subarray(0, framesPerRender),
     );
   }
 

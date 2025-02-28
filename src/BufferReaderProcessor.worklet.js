@@ -14,7 +14,19 @@ class BufferReaderProcessor extends AudioWorkletProcessor {
 
     this.port.onmessage = ( { data } ) => {
       if ( Array.isArray( data ) ) {
-        this.buffer.set( ...data );
+        const [buffer, offset] = data;
+
+        // Check if we need to handle wrap-around
+        if (offset + buffer.length <= this.buffer.length) {
+          // No wrap-around needed
+          this.buffer.set( buffer, offset );
+        } else {
+          // Need to handle wrap-around
+          const firstPartSize = this.buffer.length - offset;
+
+          this.buffer.set( buffer.subarray(0, firstPartSize), offset ); // the first part
+          this.buffer.set( buffer.subarray(firstPartSize), 0 ); // the second part
+        }
       } else {
         this.active = data;
       }

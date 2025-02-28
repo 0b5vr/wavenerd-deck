@@ -8,6 +8,7 @@ export type RendererResponseData = (
   | { type: 'uploadTexture' }
   | { type: 'deleteTexture' }
   | { type: 'clearTextures' }
+  | { type: 'updateBlocksPerRender' }
   | { type: 'render' }
   | { type: 'readBuffer'; bufferL: ArrayBufferLike; bufferR: ArrayBufferLike }
   | { type: string; error: any }

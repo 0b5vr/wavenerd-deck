@@ -32,6 +32,10 @@ self.onmessage = async (event: MessageEvent<RendererRequestData & { id: number }
     } else if (type === 'clearTextures') {
       rendererImpl.clearTextures();
       postResponse({ id, type });
+    } else if (type === 'updateBlocksPerRender') {
+      const { blocksPerRender } = data;
+      rendererImpl.updateBlocksPerRender(blocksPerRender);
+      postResponse({ id, type });
     } else if (type === 'render') {
       const { first, count, uniforms } = data;
       rendererImpl.render(first, count, uniforms);

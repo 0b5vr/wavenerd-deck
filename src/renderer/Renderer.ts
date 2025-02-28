@@ -14,11 +14,13 @@ export class Renderer {
 
   public readonly gl: WebGL2RenderingContext;
 
-  constructor(gl: WebGL2RenderingContext) {
+  constructor(gl: WebGL2RenderingContext, { blocksPerRender }: { blocksPerRender?: number }) {
     this.gl = gl;
 
     this.worker = Worker();
     this.worker.onmessage = this.__handleMessage.bind(this);
+
+    this.updateBlocksPerRender(blocksPerRender ?? 16);
   }
 
   /**
@@ -62,6 +64,13 @@ export class Renderer {
    */
   public clearTextures(): void {
     this.__sendMessage({ type: 'clearTextures' }).catch(console.error);
+  }
+
+  /**
+   * Update the blocks per render value and regenerate framebuffers.
+   */
+  public updateBlocksPerRender(blocksPerRender: number): void {
+    this.__sendMessage({ type: 'updateBlocksPerRender', blocksPerRender }).catch(console.error);
   }
 
   /**

@@ -14,6 +14,7 @@
   <span id="spanStatus">Awaiting cue</span><br />
   <label for="inputUniformKnob">Knob</label> <input id="inputUniformKnob" type="range" step="0.001" min="0" max="1" value="0" /> <span id="spanUniformKnob">0.000</span><br />
   <label for="inputLatencyBlocks">latencyBlocks</label> <input id="inputLatencyBlocks" type="range" step="1" min="0" max="256" value="64" /> <span id="spanLatencyBlocks">64</span><br />
+  <label for="inputBlocksPerRender">blocksPerRender</label> <input id="inputBlocksPerRender" type="range" step="1" min="1" max="32" value="16" /> <span id="spanBlocksPerRender">16</span><br />
 </body>
 
 <script type="module">
@@ -129,6 +130,11 @@
     inputLatencyBlocks.addEventListener( 'input', () => {
       wavenerdDeck.latencyBlocks = parseInt( inputLatencyBlocks.value, 10 );
       spanLatencyBlocks.textContent = inputLatencyBlocks.value;
+    } );
+
+    inputBlocksPerRender.addEventListener( 'input', () => {
+      wavenerdDeck.blocksPerRender = parseInt( inputBlocksPerRender.value, 10 );
+      spanBlocksPerRender.textContent = inputBlocksPerRender.value;
     } );
   } )();
 </script>

@@ -3,7 +3,7 @@ import { glslBinaryLiterals } from './glslBinaryLiterals';
 import { lazyProgram } from './utils/lazyProgram';
 import { TextureUploader } from './TextureUploader';
 import { TextureStoreEntry } from '../TextureStoreEntry';
-import { FRAMES_PER_RENDER } from '../constants';
+import { BLOCK_SIZE } from '../constants';
 import { RenderUniforms } from './RenderUniforms';
 
 // -- utils ----------------------------------------------------------------------------------------
@@ -66,9 +66,10 @@ export class RendererImpl {
   public readonly gl: WebGL2RenderingContext;
 
   public readonly __extParallel: any;
-  private readonly __framebuffer: WebGLFramebuffer;
-  private readonly __texture: WebGLTexture;
-  private readonly __dstArray: Float32Array;
+  private __blocksPerRender: number;
+  private __framebuffer: WebGLFramebuffer;
+  private __texture: WebGLTexture;
+  private __dstArray: Float32Array;
   private __textureUploader: TextureUploader;
 
   private __quadBuffer: WebGLBuffer;
@@ -76,15 +77,21 @@ export class RendererImpl {
   private __program: WebGLProgram | null;
   private __programCue: WebGLProgram | null;
 
+  private get __framesPerRender(): number {
+    return BLOCK_SIZE * this.__blocksPerRender;
+  }
+
   public constructor(gl: WebGL2RenderingContext) {
     this.gl = gl;
     gl.getExtension('EXT_color_buffer_float');
     gl.enable(gl.SCISSOR_TEST);
 
-    const [framebuffer, texture] = createFramebuffer(gl, FRAMES_PER_RENDER);
+    this.__blocksPerRender = 16;
+
+    const [framebuffer, texture] = createFramebuffer(gl, this.__framesPerRender);
     this.__framebuffer = framebuffer;
     this.__texture = texture;
-    this.__dstArray = new Float32Array(FRAMES_PER_RENDER * 4);
+    this.__dstArray = new Float32Array(this.__framesPerRender * 4);
 
     this.__extParallel = gl.getExtension('KHR_parallel_shader_compile');
 
@@ -133,6 +140,28 @@ export class RendererImpl {
    */
   public clearTextures(): void {
     this.__textureUploader.clearTextures();
+  }
+
+  /**
+   * Update the blocks per render value and regenerate framebuffers.
+   */
+  public updateBlocksPerRender(blocksPerRender: number): void {
+    if (this.__blocksPerRender === blocksPerRender) return;
+
+    this.__blocksPerRender = blocksPerRender;
+    const framesPerRender = this.__framesPerRender;
+
+    const { gl } = this;
+
+    // Clean up old resources
+    gl.deleteFramebuffer(this.__framebuffer);
+    gl.deleteTexture(this.__texture);
+
+    // Create new resources
+    const [framebuffer, texture] = createFramebuffer(gl, framesPerRender);
+    this.__framebuffer = framebuffer;
+    this.__texture = texture;
+    this.__dstArray = new Float32Array(framesPerRender * 4);
   }
 
   /**
@@ -190,6 +219,7 @@ export class RendererImpl {
    */
   public render(first: number, count: number, uniforms: RenderUniforms): void {
     const { gl } = this;
+    const framesPerRender = this.__framesPerRender;
     const program = this.__program;
     const framebuffer = this.__framebuffer;
 
@@ -233,7 +263,7 @@ export class RendererImpl {
 
     // -- framebuffer ------------------------------------------------------------------------------
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-    gl.viewport(0, 0, FRAMES_PER_RENDER, 1);
+    gl.viewport(0, 0, framesPerRender, 1);
     gl.scissor(first, 0, count, 1);
 
     // -- clear ------------------------------------------------------------------------------------
@@ -251,6 +281,7 @@ export class RendererImpl {
 
   public async readBuffer(): Promise<[Float32Array, Float32Array]> {
     const { gl } = this;
+    const framesPerRender = this.__framesPerRender;
     const framebuffer = this.__framebuffer;
     const dstArray = this.__dstArray;
 
@@ -258,12 +289,12 @@ export class RendererImpl {
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
 
     // Read the pixels from the framebuffer
-    gl.readPixels(0, 0, FRAMES_PER_RENDER, 1, gl.RGBA, gl.FLOAT, dstArray);
+    gl.readPixels(0, 0, framesPerRender, 1, gl.RGBA, gl.FLOAT, dstArray);
 
     // Extract the left and right channels from the RGBA data
-    const leftChannel = new Float32Array(FRAMES_PER_RENDER);
-    const rightChannel = new Float32Array(FRAMES_PER_RENDER);
-    for (let i = 0; i < FRAMES_PER_RENDER; i++) {
+    const leftChannel = new Float32Array(framesPerRender);
+    const rightChannel = new Float32Array(framesPerRender);
+    for (let i = 0; i < framesPerRender; i++) {
       leftChannel[i] = dstArray[i * 4 + 0]; // R channel = left
       rightChannel[i] = dstArray[i * 4 + 1]; // G channel = right
     }
