@@ -600,8 +600,6 @@ export class WavenerdDeck {
   }
 
   private async __readBuffer(bufferWriteBlocks: number): Promise<void> {
-    const { framesPerRender } = this;
-
     const bufferReaderNode = this.__bufferReaderNode;
     if (bufferReaderNode == null) { return; }
 
@@ -610,15 +608,13 @@ export class WavenerdDeck {
     bufferReaderNode.write(
       0,
       bufferWriteBlocks,
-      0,
-      dstArrays[0].subarray(0, framesPerRender),
+      dstArrays[0],
     );
 
     bufferReaderNode.write(
       1,
       bufferWriteBlocks,
-      0,
-      dstArrays[1].subarray(0, framesPerRender),
+      dstArrays[1],
     );
   }
 

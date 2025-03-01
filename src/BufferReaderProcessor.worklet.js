@@ -2,30 +2,33 @@
 
 const BLOCK_SIZE = 128;
 const CHANNELS = 2;
-const BUFFER_SIZE_PER_CHANNEL = 65536;
+const BLOCKS_PER_CHANNEL = 64;
+const FRAMES_PER_CHANNEL = BLOCK_SIZE * BLOCKS_PER_CHANNEL;
 
 class BufferReaderProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
 
     this.active = false;
-    this.buffer = new Float32Array( CHANNELS * BUFFER_SIZE_PER_CHANNEL );
+    this.buffer = new Float32Array( CHANNELS * FRAMES_PER_CHANNEL );
     this.frames = 0;
 
     this.port.onmessage = ( { data } ) => {
       if ( Array.isArray( data ) ) {
-        const [buffer, offset] = data;
+        const [channel, block, buffer] = data;
+        const frame = (block % BLOCKS_PER_CHANNEL) * BLOCK_SIZE;
+        const chHead = FRAMES_PER_CHANNEL * channel;
 
         // Check if we need to handle wrap-around
-        if (offset + buffer.length <= this.buffer.length) {
+        if (frame + buffer.length <= FRAMES_PER_CHANNEL) {
           // No wrap-around needed
-          this.buffer.set( buffer, offset );
+          this.buffer.set( buffer, chHead + frame );
         } else {
           // Need to handle wrap-around
-          const firstPartSize = this.buffer.length - offset;
+          const firstPartFrames = FRAMES_PER_CHANNEL - frame;
 
-          this.buffer.set( buffer.subarray(0, firstPartSize), offset ); // the first part
-          this.buffer.set( buffer.subarray(firstPartSize), 0 ); // the second part
+          this.buffer.set( buffer.subarray(0, firstPartFrames), chHead + frame ); // the first part
+          this.buffer.set( buffer.subarray(firstPartFrames), chHead ); // the second part
         }
       } else {
         this.active = data;
@@ -38,11 +41,11 @@ class BufferReaderProcessor extends AudioWorkletProcessor {
 
     if ( this.active ) {
       const buffer = this.buffer;
-      const head = this.frames % BUFFER_SIZE_PER_CHANNEL;
+      const frame = this.frames % FRAMES_PER_CHANNEL;
 
       outputs[ 0 ].forEach( ( ch, iCh ) => {
-        const chHead = BUFFER_SIZE_PER_CHANNEL * iCh + head;
-        ch.set( buffer.subarray( chHead, chHead + BLOCK_SIZE ) );
+        const chHead = FRAMES_PER_CHANNEL * iCh;
+        ch.set( buffer.subarray( chHead + frame, chHead + frame + BLOCK_SIZE ) );
       } );
     }
 

@@ -1,8 +1,6 @@
 import processorCode from './BufferReaderProcessor.worklet.js';
-import { BLOCK_SIZE } from './constants.js';
 
 const CHANNELS = 2;
-const BUFFER_SIZE_PER_CHANNEL = 65536;
 
 const processorBlob = new Blob([processorCode], { type: 'text/javascript' });
 const processorUrl = URL.createObjectURL(processorBlob);
@@ -36,12 +34,7 @@ export class BufferReaderNode extends AudioWorkletNode {
     };
   }
 
-  public write(channel: number, block: number, offset: number, buffer: ArrayLike<number>): void {
-    const totalOffset = (
-      BUFFER_SIZE_PER_CHANNEL * channel
-      + (BLOCK_SIZE * block) % BUFFER_SIZE_PER_CHANNEL
-      + offset
-    );
-    this.port.postMessage([buffer, totalOffset]);
+  public write(channel: number, block: number, buffer: Float32Array): void {
+    this.port.postMessage([channel, block, buffer], [buffer.buffer]);
   }
 }
