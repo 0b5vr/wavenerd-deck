@@ -81,7 +81,7 @@ export class Renderer {
    */
   public async readBuffer(): Promise<[Float32Array, Float32Array]> {
     const result = await this.__sendMessage({ type: 'readBuffer' });
-    return [new Float32Array(result.bufferL), new Float32Array(result.bufferR)];
+    return [result.bufferL, result.bufferR];
   }
 
   private __sendMessage(data: RendererRequestData): Promise<any> {

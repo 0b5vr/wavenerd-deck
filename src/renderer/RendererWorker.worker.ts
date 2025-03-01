@@ -42,7 +42,7 @@ self.onmessage = async (event: MessageEvent<RendererRequestData & { id: number }
       postResponse({ id, type });
     } else if (type === 'readBuffer') {
       const [arrayL, arrayR] = await rendererImpl.readBuffer();
-      postResponse({ id, type, bufferL: arrayL.buffer, bufferR: arrayR.buffer }, [arrayL.buffer, arrayR.buffer]);
+      postResponse({ id, type, bufferL: arrayL, bufferR: arrayR }, [arrayL.buffer, arrayR.buffer]);
     }
   } catch (error) {
     postResponse({ id, type, error: (error as Error).message });

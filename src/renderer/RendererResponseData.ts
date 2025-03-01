@@ -10,6 +10,6 @@ export type RendererResponseData = (
   | { type: 'clearTextures' }
   | { type: 'updateBlocksPerRender' }
   | { type: 'render' }
-  | { type: 'readBuffer'; bufferL: ArrayBufferLike; bufferR: ArrayBufferLike }
+  | { type: 'readBuffer'; bufferL: Float32Array; bufferR: Float32Array }
   | { type: string; error: any }
 ) & { error?: any };
