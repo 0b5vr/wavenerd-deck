@@ -2,7 +2,7 @@
 
 const BLOCK_SIZE = 128;
 const CHANNELS = 2;
-const BLOCKS_PER_CHANNEL = 64;
+const BLOCKS_PER_CHANNEL = 256;
 const FRAMES_PER_CHANNEL = BLOCK_SIZE * BLOCKS_PER_CHANNEL;
 
 class BufferReaderProcessor extends AudioWorkletProcessor {
