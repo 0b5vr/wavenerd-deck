@@ -129,11 +129,13 @@ export class RendererImpl {
     const { gl } = this;
 
     // Clean up old resources
+    gl.deleteBuffer(this.__offsetBuffer);
     gl.deleteBuffer(this.__tfBufferL);
     gl.deleteBuffer(this.__tfBufferR);
     gl.deleteTransformFeedback(this.__tf);
 
     // Create new resources
+    this.__offsetBuffer = createOffsetBuffer(gl, framesPerRender);
     this.__tfBufferL = createTFBuffer(gl, framesPerRender);
     this.__tfBufferR = createTFBuffer(gl, framesPerRender);
     this.__tf = gl.createTransformFeedback()!;
