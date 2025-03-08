@@ -477,7 +477,7 @@ export class WavenerdDeck {
     }
 
     // we're very behind
-    if (blockAhead < 0) {
+    if (this.__bufferReaderNode?.underrun) {
       this.__bufferWriteBlocks = (
         Math.floor(readBlocks / blocksPerRender) + 1
       ) * blocksPerRender;

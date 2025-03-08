@@ -11,7 +11,9 @@ class BufferReaderProcessor extends AudioWorkletProcessor {
 
     this.active = false;
     this.buffer = new Float32Array( CHANNELS * FRAMES_PER_CHANNEL );
-    this.frames = 0;
+    this.blocks = 0;
+    this.written = 0;
+    this.underrun = false;
 
     this.port.onmessage = ( { data } ) => {
       if ( Array.isArray( data ) ) {
@@ -30,6 +32,8 @@ class BufferReaderProcessor extends AudioWorkletProcessor {
           this.buffer.set( buffer.subarray(0, firstPartFrames), chHead + frame ); // the first part
           this.buffer.set( buffer.subarray(firstPartFrames), chHead ); // the second part
         }
+
+        this.written = block + buffer.length / BLOCK_SIZE;
       } else {
         this.active = data;
       }
@@ -38,18 +42,30 @@ class BufferReaderProcessor extends AudioWorkletProcessor {
 
   process( inputs, outputs, parameters ) {
     if ( this.active ) {
-      const buffer = this.buffer;
-      const frame = this.frames % FRAMES_PER_CHANNEL;
+      const underrun = this.written <= this.blocks;
+      this.setUnderrun( underrun );
 
-      outputs[ 0 ].forEach( ( ch, iCh ) => {
-        const chHead = FRAMES_PER_CHANNEL * iCh;
-        ch.set( buffer.subarray( chHead + frame, chHead + frame + BLOCK_SIZE ) );
-      } );
+      if ( !underrun ) {
+        const buffer = this.buffer;
+        const frame = (this.blocks * BLOCK_SIZE) % FRAMES_PER_CHANNEL;
+
+        outputs[ 0 ].forEach( ( ch, iCh ) => {
+          const chHead = FRAMES_PER_CHANNEL * iCh;
+          ch.set( buffer.subarray( chHead + frame, chHead + frame + BLOCK_SIZE ) );
+        } );
+      }
     }
 
-    this.frames += BLOCK_SIZE;
+    this.blocks += 1;
 
     return true;
+  }
+
+  setUnderrun( underrun ) {
+    if ( this.underrun !== underrun ) {
+      this.underrun = underrun;
+      this.port.postMessage( underrun );
+    }
   }
 }
 
