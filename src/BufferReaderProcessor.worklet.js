@@ -37,8 +37,6 @@ class BufferReaderProcessor extends AudioWorkletProcessor {
   }
 
   process( inputs, outputs, parameters ) {
-    this.frames += BLOCK_SIZE;
-
     if ( this.active ) {
       const buffer = this.buffer;
       const frame = this.frames % FRAMES_PER_CHANNEL;
@@ -49,7 +47,7 @@ class BufferReaderProcessor extends AudioWorkletProcessor {
       } );
     }
 
-    this.port.postMessage( this.frames / BLOCK_SIZE );
+    this.frames += BLOCK_SIZE;
 
     return true;
   }

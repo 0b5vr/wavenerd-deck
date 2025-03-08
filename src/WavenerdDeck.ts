@@ -167,6 +167,14 @@ export class WavenerdDeck {
   }
 
   /**
+   * Current raad blocks of its {@link __bufferReaderNode}.
+   * Calculated from the current time of the audio context.
+   */
+  private get __readBlocks(): number {
+    return ~~(this.__audio.sampleRate / BLOCK_SIZE * this.__audio.currentTime);
+  }
+
+  /**
    * Constructor of the WavenerdDeck.
    */
   public constructor({
@@ -260,8 +268,7 @@ export class WavenerdDeck {
     if (this.__isPlaying) { return; }
 
     this.__isPlaying = true;
-    const readBlocks = this.__bufferReaderNode?.readBlocks ?? 0;
-    this.__blockOffset = readBlocks - this.__blockOffset;
+    this.__blockOffset = this.__readBlocks - this.__blockOffset;
 
     this.__emit('play');
   }
@@ -273,8 +280,7 @@ export class WavenerdDeck {
     if (!this.__isPlaying) { return; }
 
     this.__isPlaying = false;
-    const readBlocks = this.__bufferReaderNode?.readBlocks ?? 0;
-    this.__blockOffset = readBlocks - this.__blockOffset;
+    this.__blockOffset = this.__readBlocks - this.__blockOffset;
 
     this.__emit('pause');
   }
@@ -454,7 +460,7 @@ export class WavenerdDeck {
     const bufferReaderNode = this.__bufferReaderNode;
     if (bufferReaderNode == null) { return; }
 
-    const { readBlocks } = bufferReaderNode;
+    const readBlocks = this.__readBlocks;
     const { sampleRate, blocksPerRender, framesPerRender } = this;
 
     this.__bufferReaderNode?.setActive(this.isPlaying);

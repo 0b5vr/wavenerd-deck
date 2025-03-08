@@ -6,12 +6,6 @@ const processorBlob = new Blob([processorCode], { type: 'text/javascript' });
 const processorUrl = URL.createObjectURL(processorBlob);
 
 export class BufferReaderNode extends AudioWorkletNode {
-  private __readBlocks: number;
-
-  public get readBlocks(): number {
-    return this.__readBlocks;
-  }
-
   public static addModule(audio: AudioContext): Promise<void> {
     return audio.audioWorklet.addModule(processorUrl);
   }
@@ -26,12 +20,6 @@ export class BufferReaderNode extends AudioWorkletNode {
       numberOfOutputs: 1,
       outputChannelCount: [CHANNELS],
     });
-
-    this.__readBlocks = 0;
-
-    this.port.onmessage = ({ data }) => {
-      this.__readBlocks = data;
-    };
   }
 
   public write(channel: number, block: number, buffer: Float32Array): void {
