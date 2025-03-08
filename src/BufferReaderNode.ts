@@ -1,4 +1,6 @@
 import processorCode from './BufferReaderProcessor.worklet.js';
+import { applyMixins } from './utils/applyMixins.js';
+import { EventEmittable } from './utils/EventEmittable.js';
 
 const CHANNELS = 2;
 
@@ -27,9 +29,16 @@ export class BufferReaderNode extends AudioWorkletNode {
       outputChannelCount: [CHANNELS],
     });
 
+    this.__underrun = false;
+
     this.port.onmessage = ({ data }) => {
       this.__underrun = data;
-      console.log(this.__underrun);
+
+      if (this.__underrun) {
+        this.__emit('underrun');
+      } else {
+        this.__emit('underrunResolved');
+      }
     };
   }
 
@@ -37,3 +46,9 @@ export class BufferReaderNode extends AudioWorkletNode {
     this.port.postMessage([channel, block, buffer], [buffer.buffer]);
   }
 }
+
+export interface BufferReaderNode extends EventEmittable<{
+  underrun: void;
+  underrunResolved: void;
+}> {}
+applyMixins(BufferReaderNode, [EventEmittable]);

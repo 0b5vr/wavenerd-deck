@@ -243,6 +243,9 @@ export class WavenerdDeck {
     BufferReaderNode.addModule(audio).then(() => {
       this.__bufferReaderNode = new BufferReaderNode(audio);
       this.__bufferReaderNode.connect(this.__node);
+
+      this.__bufferReaderNode.on('underrun', () => this.__emit('underrun'));
+      this.__bufferReaderNode.on('underrunResolved', () => this.__emit('underrunResolved'));
     });
 
     this.__bufferWriteBlocks = 0;
@@ -655,5 +658,7 @@ export interface WavenerdDeck extends EventEmittable<{
   deleteSample: { name: string };
   changeBPM: { bpm: number };
   error: { error: string | null };
+  underrun: void;
+  underrunResolved: void;
 }> {}
 applyMixins(WavenerdDeck, [EventEmittable]);
