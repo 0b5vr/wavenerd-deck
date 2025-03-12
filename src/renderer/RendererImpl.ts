@@ -285,18 +285,36 @@ export class RendererImpl {
     const framebuffer = this.__framebuffer;
     const dstArray = this.__dstArray;
 
+    const leftChannel = new Float32Array(framesPerRender);
+    const rightChannel = new Float32Array(framesPerRender);
+
+    // Ref: https://github.com/mrdoob/three.js/pull/28291
+
     // Bind the framebuffer
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
 
-    // Read the pixels from the framebuffer
-    gl.readPixels(0, 0, framesPerRender, 1, gl.RGBA, gl.FLOAT, dstArray);
+    // Create a readback buffer
+    const buffer = gl.createBuffer()!;
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, buffer);
+    gl.bufferData(gl.PIXEL_PACK_BUFFER, framesPerRender * 4 * 4, gl.STREAM_READ);
 
-    // Extract the left and right channels from the RGBA data
-    const leftChannel = new Float32Array(framesPerRender);
-    const rightChannel = new Float32Array(framesPerRender);
-    for (let i = 0; i < framesPerRender; i++) {
-      leftChannel[i] = dstArray[i * 4 + 0]; // R channel = left
-      rightChannel[i] = dstArray[i * 4 + 1]; // G channel = right
+    // Read the pixels from the framebuffer
+    gl.readPixels(0, 0, framesPerRender, 1, gl.RGBA, gl.FLOAT, 0);
+    gl.flush();
+
+    try {
+      // Readback the data into the JS realm
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, buffer);
+      gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, dstArray);
+
+      // Extract the left and right channels from the RGBA data
+      for (let i = 0; i < framesPerRender; i++) {
+        leftChannel[i] = dstArray[i * 4 + 0]; // R channel = left
+        rightChannel[i] = dstArray[i * 4 + 1]; // G channel = right
+      }
+    } finally {
+      // Clean up the readback buffer
+      gl.deleteBuffer(buffer);
     }
 
     // Unbind the framebuffer
