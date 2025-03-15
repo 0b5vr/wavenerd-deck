@@ -110,5 +110,11 @@ export const shaderchunkPreLines = shaderchunkPre.split('\n').length;
 
 export const shaderchunkPost = `void main() {
   vec2 out2 = mainAudio(mod(_timeHead + _vOff * _deltaSample, timeLength));
+
+  // remove NaN
+  if (any(isnan(out2)) || any(isinf(out2))) {
+    out2 = vec2(0.0);
+  }
+
   _fragColor = vec4(out2.x, out2.y, 0.0, 1.0);
 }`;
