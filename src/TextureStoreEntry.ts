@@ -16,7 +16,7 @@ export interface TextureStoreImageEntry {
   imageBuffer: Uint8ClampedArray;
 }
 
-export type TextureStoreEntry =
-  | TextureStoreSampleEntry
-  | TextureStoreWavetableEntry
-  | TextureStoreImageEntry;
+export type TextureStoreEntry
+  = | TextureStoreSampleEntry
+    | TextureStoreWavetableEntry
+    | TextureStoreImageEntry;
