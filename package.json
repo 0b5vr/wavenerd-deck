@@ -42,7 +42,7 @@
     "@eslint/js": "^9.19.0",
     "@stylistic/eslint-plugin": "^3.0.1",
     "cross-env": "^7.0.3",
-    "esbuild": "^0.14.38",
+    "esbuild": "^0.28.0",
     "esbuild-plugin-inline-worker": "^0.1.1",
     "eslint": "^9.19.0",
     "rimraf": "^3.0.2",

@@ -64,10 +64,11 @@ esbuild.build(createBuildOptions('esm', false));
 
 // == serve ========================================================================================
 if (SERVE) {
-  esbuild.serve({
+  const context = await esbuild.context(createBuildOptions('esm', true));
+  await context.serve({
     servedir: path.resolve(dirname, '..'),
     port: PORT,
-  }, createBuildOptions('esm', true));
+  });
 
   console.info(`Serving @ http://localhost:${PORT}`);
 }
