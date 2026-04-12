@@ -10,7 +10,7 @@ const PORT = parseInt(process.env.PORT ?? 3800, 10);
 const SERVE = process.env.SERVE === '1';
 
 // == banner =======================================================================================
-const copyright = '(c) 2020-2025 0b5vr';
+const copyright = '(c) 2020-2026 0b5vr';
 const licenseName = 'MIT License';
 const licenseUri = 'https://github.com/0b5vr/wavenerd-deck/blob/release/LICENSE';
 
