@@ -3,14 +3,14 @@
   "description": "a",
   "version": "0.8.7",
   "main": "./dist/wavenerd-deck.cjs.js",
-  "module": "./dist/wavenerd-deck.esm.js",
+  "types": "types/index.d.ts",
   "exports": {
     ".": {
+      "types": "./types/index.d.ts",
       "import": "./dist/wavenerd-deck.esm.js",
       "require": "./dist/wavenerd-deck.cjs.js"
     }
   },
-  "types": "types/index.d.ts",
   "author": "0b5vr",
   "license": "MIT",
   "private": false,
