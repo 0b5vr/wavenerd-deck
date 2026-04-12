@@ -20,7 +20,7 @@ jobs:
         uses: ./.github/actions/init
 
       - name: build
-        run: yarn build
+        run: npm run build
 
       - name: publish
         run: npm publish
