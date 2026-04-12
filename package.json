@@ -1,6 +1,6 @@
 {
   "name": "@0b5vr/wavenerd-deck",
-  "description": "a",
+  "description": "The deck engine for Wavenerd",
   "version": "0.8.7",
   "main": "./dist/wavenerd-deck.cjs.js",
   "types": "types/index.d.ts",
