@@ -120,7 +120,7 @@ export class WavenerdDeck {
    *
    * Intended to be exposed for monitoring the buffer status.
    */
-  private get bufferReadBlocks(): number {
+  public get bufferReadBlocks(): number {
     return ~~(this.__audio.sampleRate / BLOCK_SIZE * this.__audio.currentTime);
   }
 
