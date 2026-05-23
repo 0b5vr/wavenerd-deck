@@ -482,7 +482,7 @@ export class WavenerdDeck {
     // we're very behind
     if (this.__bufferReaderNode?.underrun) {
       this.__bufferWriteBlocks = (
-        Math.floor(readBlocks / blocksPerRender) + 1
+        Math.floor((readBlocks + this.latencyBlocks) / blocksPerRender)
       ) * blocksPerRender;
       console.warn('Buffer underrun. Catching up...');
     }
