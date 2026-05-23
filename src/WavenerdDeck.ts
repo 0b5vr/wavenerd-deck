@@ -99,7 +99,30 @@ export class WavenerdDeck {
   }
 
   private __bufferReaderNode?: BufferReaderNode;
+
+  /**
+   * Current write blocks of its {@link __bufferReaderNode}.
+   */
   private __bufferWriteBlocks: number;
+
+  /**
+   * Current write blocks of its {@link __bufferReaderNode}.
+   *
+   * Intended to be exposed for monitoring the buffer status.
+   */
+  public get bufferWriteBlocks(): number {
+    return this.__bufferWriteBlocks;
+  }
+
+  /**
+   * Current read blocks of its {@link __bufferReaderNode}.
+   * Calculated from the current time of the audio context.
+   *
+   * Intended to be exposed for monitoring the buffer status.
+   */
+  private get bufferReadBlocks(): number {
+    return ~~(this.__audio.sampleRate / BLOCK_SIZE * this.__audio.currentTime);
+  }
 
   /**
    * Offset of the block compared to {@link __bufferWriteBlocks} in terms of time.
@@ -164,14 +187,6 @@ export class WavenerdDeck {
    */
   public get framesPerRender(): number {
     return BLOCK_SIZE * this.__blocksPerRender;
-  }
-
-  /**
-   * Current raad blocks of its {@link __bufferReaderNode}.
-   * Calculated from the current time of the audio context.
-   */
-  private get __readBlocks(): number {
-    return ~~(this.__audio.sampleRate / BLOCK_SIZE * this.__audio.currentTime);
   }
 
   /**
@@ -271,7 +286,7 @@ export class WavenerdDeck {
     if (this.__isPlaying) { return; }
 
     this.__isPlaying = true;
-    this.__blockOffset = this.__readBlocks - this.__blockOffset;
+    this.__blockOffset = this.bufferReadBlocks - this.__blockOffset;
 
     this.__emit('play');
   }
@@ -283,7 +298,7 @@ export class WavenerdDeck {
     if (!this.__isPlaying) { return; }
 
     this.__isPlaying = false;
-    this.__blockOffset = this.__readBlocks - this.__blockOffset;
+    this.__blockOffset = this.bufferReadBlocks - this.__blockOffset;
 
     this.__emit('pause');
   }
@@ -463,7 +478,7 @@ export class WavenerdDeck {
     const bufferReaderNode = this.__bufferReaderNode;
     if (bufferReaderNode == null) { return; }
 
-    const readBlocks = this.__readBlocks;
+    const readBlocks = this.bufferReadBlocks;
     const { sampleRate, blocksPerRender, framesPerRender } = this;
 
     this.__bufferReaderNode?.setActive(this.isPlaying);

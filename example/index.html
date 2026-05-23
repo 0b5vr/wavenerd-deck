@@ -13,9 +13,35 @@
   <label for="checkboxUseSync">useSync</label> <input type="checkbox" id="checkboxUseSync" /><br />
   <span id="spanStatus">Awaiting cue</span><br />
   <label for="inputUniformKnob">Knob</label> <input id="inputUniformKnob" type="range" step="0.001" min="0" max="1" value="0" /> <span id="spanUniformKnob">0.000</span><br />
-  <label for="inputLatencyBlocks">latencyBlocks</label> <input id="inputLatencyBlocks" type="range" step="1" min="0" max="256" value="64" /> <span id="spanLatencyBlocks">64</span><br />
+  <label for="inputLatencyBlocks">latencyBlocks</label> <input id="inputLatencyBlocks" type="range" step="1" min="0" max="256" value="32" /> <span id="spanLatencyBlocks">32</span><br />
   <label for="inputBlocksPerRender">blocksPerRender</label> <input id="inputBlocksPerRender" type="range" step="1" min="1" max="32" value="16" /> <span id="spanBlocksPerRender">16</span><br />
+  <span id="spanBlocksAhead">Buffer blocks ahead: ----</span><br />
+  <div id="divBlocks"></div>
 </body>
+
+<style>
+  #divBlocks {
+    display: flex;
+    gap: 1px;
+  }
+
+  .block {
+    width: 2px;
+    height: 8px;
+  }
+
+  .block-under {
+    background: #f04;
+  }
+
+  .block-suficient {
+    background: #8d4;
+  }
+
+  .block-excess {
+    background: #18f;
+  }
+</style>
 
 <script type="module">
   import { WavenerdDeck } from '../dist/wavenerd-deck.esm.js';
@@ -24,7 +50,11 @@
   ( async () => {
     const audio = new AudioContext();
 
-    const wavenerdDeck = new WavenerdDeck( { audio } );
+    const wavenerdDeck = new WavenerdDeck( {
+      audio,
+      latencyBlocks: 32,
+      blocksPerRender: 16,
+    } );
     wavenerdDeck.node.connect( audio.destination );
     wavenerdDeck.bpm = 190;
 
@@ -56,8 +86,36 @@
     wavenerdDeck.applyCueImmediately();
 
     // == update wavenerd ==========================================================================
+    function updateSpanBlocksAhead() {
+      const blocksAhead = wavenerdDeck.bufferWriteBlocks - wavenerdDeck.bufferReadBlocks;
+
+      const BLOCK_SIZE = 128;
+      const msAhead = (blocksAhead * BLOCK_SIZE / wavenerdDeck.sampleRate * 1000).toFixed();
+
+      spanBlocksAhead.innerText = `Buffer blocks ahead: ${blocksAhead} (${msAhead} ms)`;
+    }
+
+    function updateDivBlocks() {
+      const latencyBlocks = wavenerdDeck.latencyBlocks;
+      const blocksAhead = wavenerdDeck.bufferWriteBlocks - wavenerdDeck.bufferReadBlocks;
+
+      divBlocks.innerHTML = '';
+      for ( let i = 0; i < Math.max(latencyBlocks, blocksAhead); i++ ) {
+        const block = document.createElement( 'div' );
+        block.classList.add( 'block' );
+        if ( i < blocksAhead ) {
+          block.classList.add( i < latencyBlocks ? 'block-suficient' : 'block-excess' );
+        } else {
+          block.classList.add( 'block-under' );
+        }
+        divBlocks.appendChild( block );
+      }
+    }
+
     async function update() {
       await wavenerdDeck.update();
+      updateSpanBlocksAhead();
+      updateDivBlocks();
       setTimeout(update);
     }
     update();
