@@ -484,6 +484,7 @@ export class WavenerdDeck {
       this.__bufferWriteBlocks = (
         Math.floor(readBlocks / blocksPerRender) + 1
       ) * blocksPerRender;
+      console.warn('Buffer underrun. Catching up...');
     }
 
     const genTime = BLOCK_SIZE * (this.__bufferWriteBlocks - this.blockOffset) / sampleRate;
