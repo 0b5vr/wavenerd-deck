@@ -1,11 +1,11 @@
 import { shaderchunkVertex, shaderchunkPre, shaderchunkPost } from './shaderchunks';
 import { glslBinaryLiterals } from './glslBinaryLiterals';
+import { glWaitGPUCommandsCompleteAsync } from '../utils/glWaitGPUCommandsCompleteAsync';
 import { lazyProgram } from './utils/lazyProgram';
 import { TextureUploader } from './TextureUploader';
 import { TextureStoreEntry } from '../TextureStoreEntry';
 import { BLOCK_SIZE } from '../constants';
 import { RenderUniforms } from './RenderUniforms';
-import { glWaitGPUCommandsCompleteAsync } from '../utils/glWaitGPUCommandsCompleteAsync';
 
 // -- utils ----------------------------------------------------------------------------------------
 function createQuadBuffer(gl: WebGL2RenderingContext): WebGLBuffer {
@@ -62,6 +62,49 @@ function createFramebuffer(gl: WebGL2RenderingContext, length: number): [WebGLFr
   return [framebuffer, texture];
 }
 
+// -- readback pool --------------------------------------------------------------------------------
+const READBACK_POOL_SIZE = 16;
+
+type ReadbackEntry = [
+  pixelBuffer: WebGLBuffer,
+  dstArray: Float32Array,
+];
+
+class ReadbackPool {
+  private __pool: ReadbackEntry[];
+  private __index: number;
+
+  public constructor(gl: WebGL2RenderingContext, framesPerRender: number) {
+    this.__pool = [];
+    for (let i = 0; i < READBACK_POOL_SIZE; i++) {
+      this.__pool[i] = this.__createReadbackEntry(gl, framesPerRender);
+    }
+
+    this.__index = 0;
+  }
+
+  public next(): ReadbackEntry {
+    const entry = this.__pool[this.__index];
+    this.__index = (this.__index + 1) % READBACK_POOL_SIZE;
+    return entry;
+  }
+
+  public dispose(gl: WebGL2RenderingContext): void {
+    for (const entry of this.__pool) {
+      gl.deleteBuffer(entry[0]);
+    }
+  }
+
+  private __createReadbackEntry(gl: WebGL2RenderingContext, framesPerRender: number): ReadbackEntry {
+    const pixelBuffer = gl.createBuffer()!;
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pixelBuffer);
+    gl.bufferData(gl.PIXEL_PACK_BUFFER, framesPerRender * 4 * 4, gl.STREAM_READ);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+
+    return [pixelBuffer, new Float32Array(framesPerRender * 4)];
+  }
+}
+
 // -- class ----------------------------------------------------------------------------------------
 export class RendererImpl {
   public readonly gl: WebGL2RenderingContext;
@@ -70,7 +113,7 @@ export class RendererImpl {
   private __blocksPerRender: number;
   private __framebuffer: WebGLFramebuffer;
   private __texture: WebGLTexture;
-  private __dstArray: Float32Array;
+  private __readbackPool: ReadbackPool;
   private __textureUploader: TextureUploader;
 
   private __quadBuffer: WebGLBuffer;
@@ -92,7 +135,7 @@ export class RendererImpl {
     const [framebuffer, texture] = createFramebuffer(gl, this.__framesPerRender);
     this.__framebuffer = framebuffer;
     this.__texture = texture;
-    this.__dstArray = new Float32Array(this.__framesPerRender * 4);
+    this.__readbackPool = new ReadbackPool(gl, this.__framesPerRender);
 
     this.__extParallel = gl.getExtension('KHR_parallel_shader_compile');
 
@@ -112,6 +155,7 @@ export class RendererImpl {
     const { gl } = this;
 
     gl.deleteBuffer(this.__quadBuffer);
+    this.__readbackPool.dispose(gl);
 
     gl.deleteFramebuffer(this.__framebuffer);
     gl.deleteTexture(this.__texture);
@@ -157,12 +201,13 @@ export class RendererImpl {
     // Clean up old resources
     gl.deleteFramebuffer(this.__framebuffer);
     gl.deleteTexture(this.__texture);
+    this.__readbackPool.dispose(gl);
 
     // Create new resources
     const [framebuffer, texture] = createFramebuffer(gl, framesPerRender);
     this.__framebuffer = framebuffer;
     this.__texture = texture;
-    this.__dstArray = new Float32Array(framesPerRender * 4);
+    this.__readbackPool = new ReadbackPool(gl, framesPerRender);
   }
 
   /**
@@ -284,44 +329,35 @@ export class RendererImpl {
     const { gl } = this;
     const framesPerRender = this.__framesPerRender;
     const framebuffer = this.__framebuffer;
-    const dstArray = this.__dstArray;
 
-    const leftChannel = new Float32Array(framesPerRender);
-    const rightChannel = new Float32Array(framesPerRender);
+    // Grab the next entry from the pool
+    const [pixelBuffer, dstArray] = this.__readbackPool.next();
 
     // Ref: https://github.com/mrdoob/three.js/pull/28291
 
-    // Bind the framebuffer
+    // Bind the framebuffer and pixel buffer, issue readPixels
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-
-    // Create a readback buffer
-    const buffer = gl.createBuffer()!;
-    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, buffer);
-    gl.bufferData(gl.PIXEL_PACK_BUFFER, framesPerRender * 4 * 4, gl.STREAM_READ);
-
-    // Read the pixels from the framebuffer
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pixelBuffer);
     gl.readPixels(0, 0, framesPerRender, 1, gl.RGBA, gl.FLOAT, 0);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
     // Wait for the GPU readback to complete
     await glWaitGPUCommandsCompleteAsync(gl);
 
-    try {
-      // Readback the data into the JS realm
-      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, buffer);
-      gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, dstArray);
+    // Readback the data into the JS realm
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pixelBuffer);
+    gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, dstArray);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
 
-      // Extract the left and right channels from the RGBA data
-      for (let i = 0; i < framesPerRender; i++) {
-        leftChannel[i] = dstArray[i * 4 + 0]; // R channel = left
-        rightChannel[i] = dstArray[i * 4 + 1]; // G channel = right
-      }
-    } finally {
-      // Clean up the readback buffer
-      gl.deleteBuffer(buffer);
+    // Extract the left and right channels from the RGBA data
+    const leftChannel = new Float32Array(framesPerRender);
+    const rightChannel = new Float32Array(framesPerRender);
+
+    for (let i = 0; i < framesPerRender; i++) {
+      leftChannel[i] = dstArray[i * 4 + 0];
+      rightChannel[i] = dstArray[i * 4 + 1];
     }
-
-    // Unbind the framebuffer
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
     return [leftChannel, rightChannel];
   }
