@@ -5,6 +5,7 @@ import { TextureUploader } from './TextureUploader';
 import { TextureStoreEntry } from '../TextureStoreEntry';
 import { BLOCK_SIZE } from '../constants';
 import { RenderUniforms } from './RenderUniforms';
+import { glWaitGPUCommandsCompleteAsync } from '../utils/glWaitGPUCommandsCompleteAsync';
 
 // -- utils ----------------------------------------------------------------------------------------
 function createQuadBuffer(gl: WebGL2RenderingContext): WebGLBuffer {
@@ -300,7 +301,9 @@ export class RendererImpl {
 
     // Read the pixels from the framebuffer
     gl.readPixels(0, 0, framesPerRender, 1, gl.RGBA, gl.FLOAT, 0);
-    gl.flush();
+
+    // Wait for the GPU readback to complete
+    await glWaitGPUCommandsCompleteAsync(gl);
 
     try {
       // Readback the data into the JS realm
