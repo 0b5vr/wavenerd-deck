@@ -2,6 +2,7 @@
 
 ### How to deploy
 
-Just push to GitHub with a tag! GitHub Actions will deploy this automatically
+Run the workflow "Deploy to npm" in GitHub Actions.
+You can trigger the workflow by clicking the "Run workflow" button at the top right of the page below.
 
-See: [.github/workflows/deploy.yml](.github/workflows/deploy.yml)
+https://github.com/0b5vr/wavenerd-deck/actions/workflows/deploy.yml
