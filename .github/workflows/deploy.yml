@@ -9,7 +9,7 @@ on:
         type: string
       distTag:
         description: 'Used as npm publish --tag'
-        default: 'next'
+        default: 'latest'
         required: true
         type: string
 
