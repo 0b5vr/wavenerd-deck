@@ -30,9 +30,6 @@ jobs:
       - name: init stuff
         uses: ./.github/actions/init
 
-      - name: build
-        run: npm run build
-
       - name: set version
         run: npm version ${{ github.event.inputs.version }}
 
