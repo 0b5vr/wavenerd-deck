@@ -49,19 +49,21 @@
 </style>
 
 <script type="module">
-  import { WavenerdDeck } from '../dist/wavenerd-deck.esm.js';
+  import { WavenerdClock, WavenerdDeck } from '../dist/wavenerd-deck.esm.js';
   import { fetchImage } from './fetchImage.js';
 
   ( async () => {
     const audio = new AudioContext();
 
+    const clock = new WavenerdClock( { audio, bpm: 190 } );
+
     const wavenerdDeck = new WavenerdDeck( {
       audio,
+      clock,
       latencyBlocks: 32,
       blocksPerRender: 16,
     } );
     wavenerdDeck.node.connect( audio.destination );
-    wavenerdDeck.bpm = 190;
 
     await fetch( './wavetables/m-talk.bin' )
       .then( ( res ) => res.arrayBuffer() )
@@ -138,19 +140,20 @@
       )
     } );
 
-    wavenerdDeck.on( 'play', () => {
+    // == clock event listeners ====================================================================
+    clock.on( 'play', () => {
       buttonPlay.disabled = true;
       buttonPause.disabled = false;
     } );
 
-    wavenerdDeck.on( 'pause', () => {
+    clock.on( 'pause', () => {
       buttonPlay.disabled = false;
       buttonPause.disabled = true;
     } );
 
     // == ui listeners =============================================================================
     inputBpm.addEventListener( 'change', () => {
-      wavenerdDeck.bpm = inputBpm.value;
+      clock.bpm = parseFloat( inputBpm.value );
     } );
 
     inputBeatsPerBar.addEventListener( 'change', () => {
@@ -159,15 +162,15 @@
 
     buttonPlay.addEventListener( 'click', () => {
       audio.resume(); // uh
-      wavenerdDeck.play();
+      clock.play();
     } );
 
     buttonPause.addEventListener( 'click', () => {
-      wavenerdDeck.pause();
+      clock.pause();
     } );
 
     buttonRewind.addEventListener( 'click', () => {
-      wavenerdDeck.rewind();
+      clock.rewind();
     } );
 
     selectExample.addEventListener( 'change', async () => {

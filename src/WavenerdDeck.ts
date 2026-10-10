@@ -1,6 +1,6 @@
 import { Renderer } from './renderer/Renderer';
-import { BeatManager } from './BeatManager';
-import { beatManagerV1Compat } from './beatManagerV1Compat';
+import { WavenerdClock } from './WavenerdClock';
+import { wavenerdClockV1Compat } from './wavenerdClockV1Compat';
 import { BufferReaderNode } from './BufferReaderNode';
 import { EventEmittable } from './utils/EventEmittable';
 import { TextureStore } from './TextureStore';
@@ -23,12 +23,6 @@ interface WavenerdDeckProgram {
 }
 
 export class WavenerdDeck {
-  /**
-   * Its host deck.
-   * It's highly recommended to connect the node of the host deck into the node of this deck, to ensure the timing consistency.
-   */
-  public hostDeck?: WavenerdDeck;
-
   /**
    * The count of latency blocks.
    * Block == 128 samples.
@@ -55,27 +49,18 @@ export class WavenerdDeck {
   }
 
   /**
-   * Whether the wavenerd deck is playing or not.
+   * Its {@link WavenerdClock}. Decks sharing a clock play in sync.
    */
-  private __isPlaying: boolean;
+  public readonly clock: WavenerdClock;
 
   /**
-   * Whether the wavenerd deck is playing or not.
+   * When its clock rewinds, apply the cue immediately.
+   *
+   * This is being a member since it needs to be unsubscribed on {@link dispose}.
    */
-  public get isPlaying(): boolean {
-    return this.hostDeck?.__isPlaying ?? this.__isPlaying;
-  }
-
-  /**
-   * Its current bpm.
-   */
-  public get bpm(): number {
-    return this.beatManager.bpm;
-  }
-
-  public set bpm(value: number) {
-    this.beatManager.bpm = value;
-  }
+  private __applyCueOnClockRewind = (): void => {
+    this.applyCueImmediately();
+  };
 
   private __beatsPerBar = 4;
 
@@ -113,10 +98,7 @@ export class WavenerdDeck {
   /**
    * Its binded `AudioContext`.
    */
-  private __audio: AudioContext;
-  public get audio(): AudioContext {
-    return this.__audio;
-  }
+  public readonly audio: AudioContext;
 
   /**
    * Its node of the AudioContext.
@@ -149,33 +131,14 @@ export class WavenerdDeck {
    * Intended to be exposed for monitoring the buffer status.
    */
   public get bufferReadBlocks(): number {
-    return Math.floor(this.__audio.sampleRate / BLOCK_SIZE * this.__audio.currentTime);
-  }
-
-  /**
-   * Offset of the block compared to {@link __bufferWriteBlocks} in terms of time.
-   * It is used to play, pause and rewind the deck.
-   */
-  private __blockOffset: number;
-  public get blockOffset(): number {
-    return this.hostDeck?.__blockOffset ?? this.__blockOffset;
+    return Math.floor(this.audio.sampleRate / BLOCK_SIZE * this.audio.currentTime);
   }
 
   /**
    * Alias for the `audio.sampleRate` .
    */
   public get sampleRate(): number {
-    return this.__audio.sampleRate;
-  }
-
-  private __beatManager: BeatManager;
-  public get beatManager(): BeatManager {
-    const hostDeckBeatManager = this.hostDeck?.beatManager;
-    if (hostDeckBeatManager) {
-      return hostDeckBeatManager;
-    }
-
-    return this.__beatManager;
+    return this.audio.sampleRate;
   }
 
   private __program: WavenerdDeckProgram | null;
@@ -221,44 +184,35 @@ export class WavenerdDeck {
    */
   public constructor({
     audio,
-    hostDeck,
+    clock,
     latencyBlocks,
     blocksPerRender,
-    bpm,
     beatsPerBar,
   }: {
     audio: AudioContext;
-    hostDeck?: WavenerdDeck;
+
+    /**
+     * The clock the deck uses to do time stuff. Decks sharing a clock play in sync.
+     */
+    clock: WavenerdClock;
+
     latencyBlocks?: number;
     blocksPerRender?: number;
-    bpm?: number;
     beatsPerBar?: number;
   }) {
-    this.__isPlaying = false;
-
     this.latencyBlocks = latencyBlocks ?? 16;
     this.__blocksPerRender = blocksPerRender ?? 16;
 
-    // -- host deck --------------------------------------------------------------------------------
-    if (hostDeck) {
-      this.hostDeck = hostDeck;
+    // -- clock ------------------------------------------------------------------------------------
+    // the clock's audio context must match the deck's because reasons
+    if (clock.audio !== audio) {
+      throw new Error('The clock must use the same AudioContext as the deck');
     }
 
-    // -- beat manager -----------------------------------------------------------------------------
-    this.__beatManager = new BeatManager();
-    this.__beatManager.bpm = bpm ?? 140;
-    this.__beatManager.on('changeBPM', ({ bpm }) => {
-      this.__emit('changeBPM', { bpm });
-    });
+    this.clock = clock;
+    this.clock.on('rewind', this.__applyCueOnClockRewind);
 
     this.beatsPerBar = beatsPerBar ?? 4;
-
-    // TODO: temporary solution
-    if (hostDeck) {
-      hostDeck.on('rewind', () => {
-        this.rewind();
-      });
-    }
 
     // -- renderer ---------------------------------------------------------------------------------
     this.__renderer = new Renderer({ blocksPerRender });
@@ -282,7 +236,7 @@ export class WavenerdDeck {
     this.__programCue = null;
 
     // -- audio ------------------------------------------------------------------------------------
-    this.__audio = audio;
+    this.audio = audio;
     this.__node = audio.createGain();
 
     BufferReaderNode.addModule(audio).then(() => {
@@ -294,7 +248,6 @@ export class WavenerdDeck {
     });
 
     this.__bufferWriteBlocks = 0;
-    this.__blockOffset = 0;
   }
 
   /**
@@ -307,43 +260,9 @@ export class WavenerdDeck {
     this.__textureStore.dispose();
 
     this.__bufferReaderNode?.disconnect();
-  }
 
-  /**
-   * Play the deck.
-   */
-  public play(): void {
-    if (this.__isPlaying) { return; }
-
-    this.__isPlaying = true;
-    this.__blockOffset = this.bufferReadBlocks - this.__blockOffset;
-
-    this.__emit('play');
-  }
-
-  /**
-   * Pause the deck.
-   */
-  public pause(): void {
-    if (!this.__isPlaying) { return; }
-
-    this.__isPlaying = false;
-    this.__blockOffset = this.bufferReadBlocks - this.__blockOffset;
-
-    this.__emit('pause');
-  }
-
-  /**
-   * Rewind the deck.
-   */
-  public rewind(): void {
-    this.__blockOffset = this.__bufferWriteBlocks;
-
-    this.__beatManager.reset();
-
-    this.applyCueImmediately();
-
-    this.__emit('rewind');
+    // the clock might be shared with other decks, so only stop listening to it instead of disposing it
+    this.clock.off('rewind', this.__applyCueOnClockRewind);
   }
 
   /**
@@ -478,7 +397,7 @@ export class WavenerdDeck {
    * Load a sample and store as a uniform texture.
    */
   public async loadSample(name: string, inputBuffer: ArrayBuffer): Promise<void> {
-    const audioBuffer = await this.__audio.decodeAudioData(inputBuffer);
+    const audioBuffer = await this.audio.decodeAudioData(inputBuffer);
 
     const id = `sample_${name}`;
     this.__textureStore.loadSample(id, audioBuffer);
@@ -505,12 +424,12 @@ export class WavenerdDeck {
     if (bufferReaderNode == null) { return; }
 
     const readBlocks = this.bufferReadBlocks;
-    const { sampleRate, blocksPerRender, framesPerRender } = this;
+    const { blocksPerRender, framesPerRender } = this;
 
-    this.__bufferReaderNode?.setActive(this.isPlaying);
+    this.__bufferReaderNode?.setActive(this.clock.isPlaying);
 
     // -- early abort? -----------------------------------------------------------------------------
-    if (!this.isPlaying) { return; }
+    if (!this.clock.isPlaying) { return; }
 
     // -- choose a right write block ---------------------------------------------------------------
     const blockAhead = this.__bufferWriteBlocks - readBlocks;
@@ -528,11 +447,10 @@ export class WavenerdDeck {
       console.warn('Buffer underrun. Catching up...');
     }
 
-    const genFrame = BLOCK_SIZE * (this.__bufferWriteBlocks - this.blockOffset);
-    const genTime = genFrame / sampleRate;
+    const audioFrame = BLOCK_SIZE * this.__bufferWriteBlocks;
+    const genFrame = audioFrame - this.clock.getOrInitClockFrameOffset(audioFrame);
 
     // -- update stuff -----------------------------------------------------------------------------
-    this.beatManager.update(genTime);
     this.__updateParams();
 
     // -- should I process the next program? -------------------------------------------------------
@@ -603,7 +521,7 @@ export class WavenerdDeck {
 
     // -- common -----------------------------------------------------------------------------------
     uniforms.uniform1f.push(
-      { name: 'bpm', value: this.bpm },
+      { name: 'bpm', value: this.clock.bpm },
       { name: 'sampleRate', value: sampleRate },
       { name: '_framesPerRender', value: framesPerRender },
     );
@@ -613,15 +531,15 @@ export class WavenerdDeck {
       { name: '_deltaSample', value: 1.0 / sampleRate },
     );
 
+    const time = renderHeadFrame / sampleRate;
     const {
-      time,
       beat,
       bar,
       sixteenBar,
       beatSeconds,
       barSeconds,
       sixteenBarSeconds,
-    } = beatManagerV1Compat(this.beatManager);
+    } = wavenerdClockV1Compat(this.clock, time);
 
     uniforms.uniform4f.push(
       { name: 'timeLength', value: [beatSeconds, barSeconds, sixteenBarSeconds, 1E16] },
@@ -650,7 +568,7 @@ export class WavenerdDeck {
     );
 
     const framesPerBeat = ceilWithTolerance(
-      this.beatManager.beatSeconds * sampleRate,
+      this.clock.beatSeconds * sampleRate,
       BEAT_BOUNDARY_TOLERANCE,
     );
 
@@ -701,7 +619,7 @@ export class WavenerdDeck {
   private __calcBeatStartFrame(beatIndex: number): number {
     // The tolerance prevents boundaries that should be exactly on a frame from jittering.
     return ceilWithTolerance(
-      this.beatManager.beatToTime(beatIndex) * this.sampleRate,
+      this.clock.beatToTime(beatIndex) * this.sampleRate,
       BEAT_BOUNDARY_TOLERANCE,
     );
   }
@@ -714,7 +632,7 @@ export class WavenerdDeck {
   private __calcBeatIndexAtFrame(frame: number): number {
     // The estimate is off by one at most, because of floating point errors.
     // Correct it to be consistent with __calcBeatStartFrame, which decides beat boundaries.
-    let beatIndex = Math.floor(this.beatManager.timeToBeat(frame / this.sampleRate));
+    let beatIndex = Math.floor(this.clock.timeToBeat(frame / this.sampleRate));
     if (this.__calcBeatStartFrame(beatIndex) > frame) {
       beatIndex--;
     } else if (this.__calcBeatStartFrame(beatIndex + 1) <= frame) {
@@ -779,9 +697,6 @@ export class WavenerdDeck {
 
 export interface WavenerdDeck extends EventEmittable<{
   update: void;
-  play: void;
-  pause: void;
-  rewind: void;
   changeCueStatus: { cueStatus: 'none' | 'compiling' | 'ready' | 'applying' };
   setParam: { name: string; value: number };
   loadWavetable: { name: string };
@@ -790,7 +705,6 @@ export interface WavenerdDeck extends EventEmittable<{
   deleteImage: { name: string };
   loadSample: { name: string; sampleRate: number; duration: number };
   deleteSample: { name: string };
-  changeBPM: { bpm: number };
   changeBeatsPerBar: { beatsPerBar: number };
   error: { error: string | null };
   underrun: void;

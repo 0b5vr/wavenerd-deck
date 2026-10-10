@@ -18,12 +18,15 @@ npm install @0b5vr/wavenerd-deck
 ## Usage
 
 ```js
-import WavenerdDeck from '@0b5vr/wavenerd-deck';
+import { WavenerdClock, WavenerdDeck } from '@0b5vr/wavenerd-deck';
 
 const audio = new AudioContext();
 
+// Create a clock, which holds the tempo and the transport
+const clock = new WavenerdClock({ audio, bpm: 140 });
+
 // Create a deck, connect it to the audio destination
-const deck = new WavenerdDeck({ audio, bpm: 140 });
+const deck = new WavenerdDeck({ audio, clock });
 deck.node.connect(audio.destination);
 
 // Compile a GLSL fragment shader and apply it
@@ -32,9 +35,10 @@ deck.applyCue(); // apply at the next bar boundary
 deck.applyCueImmediately(); // apply immediately
 
 // Transport
-deck.play();
-deck.pause();
-deck.rewind();
+clock.play();
+clock.pause();
+clock.rewind();
+clock.bpm = 170;
 
 // Update loop (call every frame)
 async function update() {
