@@ -1,28 +1,15 @@
 import { EventEmittable } from './utils/EventEmittable';
 import { applyMixins } from './utils/applyMixins';
-import { mod } from './utils/mod';
 
 export interface BeatManagerUpdateEvent {
   time: number;
   bpm: number;
-  beat: number;
-  bar: number;
-  sixteenBar: number;
+  beatPosition: number;
 }
 
 export class BeatManager {
   public static CalcBeatSeconds(bpm: number): number {
     return 60.0 / bpm;
-  }
-
-  public static CalcBarSeconds(bpm: number): number {
-    // return this.beatLength * 4.0;
-    return 240.0 / bpm;
-  }
-
-  public static CalcSixteenBarSeconds(bpm: number): number {
-    // return this.barLength * 16.0;
-    return 3840.0 / bpm;
   }
 
   private __bpm = 140.0;
@@ -31,9 +18,11 @@ export class BeatManager {
   }
 
   public set bpm(value: number) {
-    const prevBpm = this.__bpm;
+    // re-anchor the beat clock so the beat position is preserved across BPM changes
+    this.__anchorBeat = this.beatPosition;
+    this.__anchorTime = this.__time;
+
     this.__bpm = Math.max(0.0, value);
-    this.__sixteenBar = this.__sixteenBar * prevBpm / this.__bpm;
     this.__emit('changeBPM', { bpm: this.__bpm });
   }
 
@@ -41,58 +30,63 @@ export class BeatManager {
     return BeatManager.CalcBeatSeconds(this.__bpm);
   }
 
-  public get barSeconds(): number {
-    return BeatManager.CalcBarSeconds(this.__bpm);
-  }
-
-  public get sixteenBarSeconds(): number {
-    return BeatManager.CalcSixteenBarSeconds(this.__bpm);
-  }
-
   private __time = 0.0;
   public get time(): number {
     return this.__time;
   }
 
-  private __beat = 0.0;
-  public get beat(): number {
-    return this.__beat;
-  }
+  /**
+   * The time at the last BPM change or reset, paired with {@link __anchorBeat}.
+   *
+   * The beat position is derived from the anchor every time instead of being accumulated,
+   * so it does not drift and beat boundaries are deterministic.
+   */
+  private __anchorTime = 0.0;
 
-  private __bar = 0.0;
-  public get bar(): number {
-    return this.__bar;
-  }
+  /**
+   * The beat position at the last BPM change or reset, paired with {@link __anchorTime}.
+   *
+   * The beat position is derived from the anchor every time instead of being accumulated,
+   * so it does not drift and beat boundaries are deterministic.
+   */
+  private __anchorBeat = 0.0;
 
-  private __sixteenBar = 0.0;
-  public get sixteenBar(): number {
-    return this.__sixteenBar;
+  /**
+   * The current position in beats since the last reset.
+   */
+  public get beatPosition(): number {
+    return this.timeToBeat(this.__time);
   }
 
   public reset(): void {
     this.__time = 0.0;
-    this.__sixteenBar = 0.0;
+    this.__anchorTime = 0.0;
+    this.__anchorBeat = 0.0;
+  }
+
+  /**
+   * Return the time when the given beat position comes, assuming the BPM does not change.
+   * The result for the same beat position is deterministic until the BPM changes or reset.
+   */
+  public beatToTime(beatPosition: number): number {
+    return this.__anchorTime + (beatPosition - this.__anchorBeat) * 60.0 / this.__bpm;
+  }
+
+  /**
+   * Return the beat position at the given time, assuming the BPM does not change.
+   * Inverse of {@link beatToTime}.
+   */
+  public timeToBeat(time: number): number {
+    return this.__anchorBeat + (time - this.__anchorTime) * this.__bpm / 60.0;
   }
 
   public update(time: number): BeatManagerUpdateEvent {
-    const beatSeconds = BeatManager.CalcBeatSeconds(this.__bpm);
-    const barSeconds = BeatManager.CalcBarSeconds(this.__bpm);
-    const sixteenBarSeconds = BeatManager.CalcSixteenBarSeconds(this.__bpm);
-
-    const delta = time - this.__time;
-
-    this.__sixteenBar = mod(this.__sixteenBar + delta, sixteenBarSeconds);
-    this.__bar = mod(this.__sixteenBar, barSeconds);
-    this.__beat = mod(this.__bar, beatSeconds);
-
     this.__time = time;
 
     const event = {
       time,
       bpm: this.__bpm,
-      beat: this.__beat,
-      bar: this.__bar,
-      sixteenBar: this.__sixteenBar,
+      beatPosition: this.beatPosition,
     };
 
     this.__emit('update', event);

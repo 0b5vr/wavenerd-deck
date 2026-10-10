@@ -3,7 +3,12 @@
 <body>
   <textarea cols="100" rows="40" id="textarea">
   </textarea><br />
+  <label for="selectExample">Example</label> <select id="selectExample">
+    <option value="./example-v2.frag">example-v2.frag (shader version 2)</option>
+    <option value="./example.frag">example.frag (shader version 1)</option>
+  </select><br />
   BPM: <input id="inputBpm" type="number" value="190" /><br />
+  Beats per bar: <input id="inputBeatsPerBar" type="number" value="4" min="1" step="1" /><br />
   <button id="buttonPlay">Play</button>
   <button id="buttonPause" disabled>Pause</button>
   <button id="buttonRewind">Rewind</button><br />
@@ -77,7 +82,7 @@
       .then( ( res ) => res.arrayBuffer() )
       .then( ( buffer ) => wavenerdDeck.loadSample( '909oh', buffer ) );
 
-    const frag = await fetch( './example.frag' )
+    const frag = await fetch( selectExample.value )
       .then( ( res ) => res.text() );
 
     textarea.value = frag;
@@ -148,6 +153,10 @@
       wavenerdDeck.bpm = inputBpm.value;
     } );
 
+    inputBeatsPerBar.addEventListener( 'change', () => {
+      wavenerdDeck.beatsPerBar = parseInt( inputBeatsPerBar.value, 10 );
+    } );
+
     buttonPlay.addEventListener( 'click', () => {
       audio.resume(); // uh
       wavenerdDeck.play();
@@ -159,6 +168,14 @@
 
     buttonRewind.addEventListener( 'click', () => {
       wavenerdDeck.rewind();
+    } );
+
+    selectExample.addEventListener( 'change', async () => {
+      textarea.value = await fetch( selectExample.value )
+        .then( ( res ) => res.text() );
+
+      await wavenerdDeck.compile( textarea.value );
+      wavenerdDeck.applyCue();
     } );
 
     buttonCompile.addEventListener( 'click', () => {

@@ -1,5 +1,6 @@
-import { shaderchunkVertex, shaderchunkPre, shaderchunkPost } from './shaderchunks';
+import { shaderchunkVertex } from './shaderchunks';
 import { glslBinaryLiterals } from './glslBinaryLiterals';
+import { wrapShader } from './wrapShader';
 import { glWaitGPUCommandsCompleteAsync } from '../utils/glWaitGPUCommandsCompleteAsync';
 import { lazyProgram } from './utils/lazyProgram';
 import { TextureUploader } from './TextureUploader';
@@ -216,27 +217,35 @@ export class RendererImpl {
   public async compile(code: string): Promise<void> {
     const { gl } = this;
 
-    let codeToCompile = shaderchunkPre + code + shaderchunkPost;
-    codeToCompile = glslBinaryLiterals(codeToCompile);
+    let program: WebGLProgram;
 
-    const program = await lazyProgram(
-      gl,
-      shaderchunkVertex,
-      codeToCompile,
-      {
-        extParallel: this.__extParallel,
-      },
-    ).catch((error) => {
-      this.__programCue = null;
+    try {
+      // Convert the user code into a complete code for compilation
+      let codeToCompile = wrapShader(code);
+      codeToCompile = glslBinaryLiterals(codeToCompile);
+
+      // Let's compile
+      program = await lazyProgram(
+        gl,
+        shaderchunkVertex,
+        codeToCompile,
+        {
+          extParallel: this.__extParallel,
+        },
+      );
+    } catch (error) {
       if (this.__programCue) {
         gl.deleteProgram(this.__programCue);
       }
+      this.__programCue = null;
 
       throw error;
-    });
+    }
 
-    if (program == null) { return; }
-
+    // Replace the current cue program with the newly compiled program
+    if (this.__programCue) {
+      gl.deleteProgram(this.__programCue);
+    }
     this.__programCue = program;
   }
 
@@ -285,6 +294,16 @@ export class RendererImpl {
     for (const { name, value } of uniforms.uniform4f) {
       const location = gl.getUniformLocation(program, name);
       gl.uniform4f(location, ...value);
+    }
+
+    for (const { name, value } of uniforms.uniform1i) {
+      const location = gl.getUniformLocation(program, name);
+      gl.uniform1i(location, value);
+    }
+
+    for (const { name, value } of uniforms.uniform3iv) {
+      const location = gl.getUniformLocation(program, name);
+      gl.uniform3iv(location, value);
     }
 
     // Apply texture uniforms

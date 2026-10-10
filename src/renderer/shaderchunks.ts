@@ -9,18 +9,14 @@ void main() {
 }
 `;
 
-export const shaderchunkPre = `#version 300 es
-
-precision highp float;
-
-#define _PI 3.14159265359
+/**
+ * Uniforms and helper functions shared among all shader versions.
+ */
+export const shaderchunkCommon = `#define _PI 3.14159265359
 
 uniform float bpm;
-uniform vec4 timeLength;
 uniform float sampleRate;
-uniform float _deltaSample;
 uniform float _framesPerRender;
-uniform vec4 _timeHead;
 
 out vec4 _fragColor;
 
@@ -98,16 +94,3 @@ vec2 sampleSinc( sampler2D s, vec4 meta, float time ) {
   return sum;
 }
 `;
-
-export const shaderchunkPreLines = shaderchunkPre.split('\n').length;
-
-export const shaderchunkPost = `void main() {
-  vec2 out2 = mainAudio(mod(_timeHead + floor(gl_FragCoord.x) * _deltaSample, timeLength));
-
-  // remove NaN
-  if (any(isnan(out2)) || any(isinf(out2))) {
-    out2 = vec2(0.0);
-  }
-
-  _fragColor = vec4(out2.x, out2.y, 0.0, 1.0);
-}`;

@@ -1,13 +1,21 @@
 import { Renderer } from './renderer/Renderer';
 import { BeatManager } from './BeatManager';
+import { beatManagerV1Compat } from './beatManagerV1Compat';
 import { BufferReaderNode } from './BufferReaderNode';
 import { EventEmittable } from './utils/EventEmittable';
 import { TextureStore } from './TextureStore';
 import { applyMixins } from './utils/applyMixins';
-import { shaderchunkPreLines } from './renderer/shaderchunks';
 import { WavenerdDeckParam } from './WavenerdDeckParam';
 import { BLOCK_SIZE } from './constants';
 import { RenderUniforms } from './renderer/RenderUniforms';
+import { BEAT_SEGMENTS_PER_RENDER } from './renderer/wrapShaderV2';
+import { ceilWithTolerance } from './utils/ceilWithTolerance';
+
+/**
+ * The tolerance used to snap beat boundaries to frames.
+ * See {@link ceilWithTolerance} for why.
+ */
+const BEAT_BOUNDARY_TOLERANCE = 1E-4;
 
 interface WavenerdDeckProgram {
   code: string;
@@ -69,6 +77,26 @@ export class WavenerdDeck {
     this.beatManager.bpm = value;
   }
 
+  private __beatsPerBar = 4;
+
+  /**
+   * The number of beats per bar. Must be a natural number.
+   *
+   * This value affects the timing of when the cue shader is applied.
+   */
+  public get beatsPerBar(): number {
+    return this.__beatsPerBar;
+  }
+
+  public set beatsPerBar(value: number) {
+    if (!Number.isInteger(value) || value < 1) {
+      throw new RangeError(`beatsPerBar must be a natural number, got ${value}`);
+    }
+
+    this.__beatsPerBar = value;
+    this.__emit('changeBeatsPerBar', { beatsPerBar: value });
+  }
+
   /**
    * Its renderer.
    */
@@ -121,7 +149,7 @@ export class WavenerdDeck {
    * Intended to be exposed for monitoring the buffer status.
    */
   public get bufferReadBlocks(): number {
-    return ~~(this.__audio.sampleRate / BLOCK_SIZE * this.__audio.currentTime);
+    return Math.floor(this.__audio.sampleRate / BLOCK_SIZE * this.__audio.currentTime);
   }
 
   /**
@@ -152,7 +180,6 @@ export class WavenerdDeck {
 
   private __program: WavenerdDeckProgram | null;
   private __programCue: WavenerdDeckProgram | null;
-  private __programSwapTime: number | null;
 
   private __params = new Map<string, WavenerdDeckParam>();
 
@@ -198,12 +225,14 @@ export class WavenerdDeck {
     latencyBlocks,
     blocksPerRender,
     bpm,
+    beatsPerBar,
   }: {
     audio: AudioContext;
     hostDeck?: WavenerdDeck;
     latencyBlocks?: number;
     blocksPerRender?: number;
     bpm?: number;
+    beatsPerBar?: number;
   }) {
     this.__isPlaying = false;
 
@@ -221,6 +250,8 @@ export class WavenerdDeck {
     this.__beatManager.on('changeBPM', ({ bpm }) => {
       this.__emit('changeBPM', { bpm });
     });
+
+    this.beatsPerBar = beatsPerBar ?? 4;
 
     // TODO: temporary solution
     if (hostDeck) {
@@ -249,7 +280,6 @@ export class WavenerdDeck {
 
     this.__program = null;
     this.__programCue = null;
-    this.__programSwapTime = null;
 
     // -- audio ------------------------------------------------------------------------------------
     this.__audio = audio;
@@ -360,9 +390,6 @@ export class WavenerdDeck {
   public applyCue(): void {
     if (this.__cueStatus === 'ready') {
       this.__setCueStatus('applying');
-
-      this.__programSwapTime
-        = this.beatManager.time - this.beatManager.bar + this.beatManager.barSeconds;
     }
   }
 
@@ -377,7 +404,6 @@ export class WavenerdDeck {
 
       this.__program = this.__programCue;
       this.__programCue = null;
-      this.__programSwapTime = null;
     }
   }
 
@@ -502,37 +528,39 @@ export class WavenerdDeck {
       console.warn('Buffer underrun. Catching up...');
     }
 
-    const genTime = BLOCK_SIZE * (this.__bufferWriteBlocks - this.blockOffset) / sampleRate;
+    const genFrame = BLOCK_SIZE * (this.__bufferWriteBlocks - this.blockOffset);
+    const genTime = genFrame / sampleRate;
 
     // -- update stuff -----------------------------------------------------------------------------
     this.beatManager.update(genTime);
     this.__updateParams();
 
     // -- should I process the next program? -------------------------------------------------------
-    let beginNext = this.__programSwapTime != null
-      ? Math.floor((this.__programSwapTime - genTime) * sampleRate)
-      : framesPerRender;
-    beginNext = Math.min(beginNext, framesPerRender);
+    /**
+     * The frame at which the next program should begin rendering.
+     * Initialized with {@link framesPerRender}, that means that the next program will not be
+     * rendered within the current update call.
+     */
+    let beginNextFrame = framesPerRender;
 
-    // -- swap the program from first --------------------------------------------------------------
-    if (beginNext < 0) {
-      this.applyCueImmediately();
-
-      beginNext = framesPerRender;
+    if (this.__cueStatus === 'applying') {
+      // Swap at the next bar boundary
+      const swapBeat = this.__calcFirstBarBeatIndexAtOrAfterFrame(genFrame);
+      beginNextFrame = Math.min(this.__calcBeatStartFrame(swapBeat) - genFrame, framesPerRender);
     }
 
     // -- render -----------------------------------------------------------------------------------
-    if (this.__program) {
-      const uniforms = this.__collectUniforms();
-      this.__renderer.render(0, beginNext, uniforms);
+    if (this.__program && beginNextFrame > 0) {
+      const uniforms = this.__collectUniforms(genFrame);
+      this.__renderer.render(0, beginNextFrame, uniforms);
     }
 
     // render the next program from the mid of the block
-    if (beginNext < framesPerRender && this.__programCue != null) {
+    if (beginNextFrame < framesPerRender && this.__programCue != null) {
       this.applyCueImmediately();
 
-      const uniforms = this.__collectUniforms();
-      this.__renderer.render(beginNext, framesPerRender - beginNext, uniforms);
+      const uniforms = this.__collectUniforms(genFrame);
+      this.__renderer.render(beginNextFrame, framesPerRender - beginNextFrame, uniforms);
     }
 
     // -- read buffer + update write blocks --------------------------------------------------------
@@ -559,34 +587,75 @@ export class WavenerdDeck {
     }
   }
 
-  private __collectUniforms(): RenderUniforms {
-    const {
-      time,
-      beatSeconds,
-      barSeconds,
-      sixteenBarSeconds,
-      beat,
-      bar,
-      sixteenBar,
-    } = this.beatManager;
+  /**
+   * @param renderHeadFrame The frame at the head of the render, counted from the last rewind
+   */
+  private __collectUniforms(renderHeadFrame: number): RenderUniforms {
     const { sampleRate, framesPerRender } = this;
 
     const uniforms: RenderUniforms = {
       uniform1f: [],
       uniform4f: [],
+      uniform1i: [],
+      uniform3iv: [],
       uniformTexture: [],
     };
 
     // -- common -----------------------------------------------------------------------------------
     uniforms.uniform1f.push(
       { name: 'bpm', value: this.bpm },
-      { name: '_deltaSample', value: 1.0 / sampleRate },
+      { name: 'sampleRate', value: sampleRate },
       { name: '_framesPerRender', value: framesPerRender },
     );
+
+    // -- time (shader version 1) ------------------------------------------------------------------
+    uniforms.uniform1f.push(
+      { name: '_deltaSample', value: 1.0 / sampleRate },
+    );
+
+    const {
+      time,
+      beat,
+      bar,
+      sixteenBar,
+      beatSeconds,
+      barSeconds,
+      sixteenBarSeconds,
+    } = beatManagerV1Compat(this.beatManager);
 
     uniforms.uniform4f.push(
       { name: 'timeLength', value: [beatSeconds, barSeconds, sixteenBarSeconds, 1E16] },
       { name: '_timeHead', value: [beat, bar, sixteenBar, time] },
+    );
+
+    // -- time (shader version 2) ------------------------------------------------------------------
+    // Each segment is (beatIndex, beatFrame, relativeFrame).
+    // "From relativeFrame on, it's the beatIndex-th beat, counting from beatFrame"
+    const beatIndexHead = this.__calcBeatIndexAtFrame(renderHeadFrame);
+
+    // unused segments are initialized to [0, 0, framesPerRender]
+    const beatSegments: [number, number, number][] = new Array(BEAT_SEGMENTS_PER_RENDER)
+      .fill([0, 0, framesPerRender]);
+
+    beatSegments[0] = [beatIndexHead, renderHeadFrame - this.__calcBeatStartFrame(beatIndexHead), 0];
+
+    for (let i = 1; i < BEAT_SEGMENTS_PER_RENDER; i++) {
+      const relativeFrame = this.__calcBeatStartFrame(beatIndexHead + i) - renderHeadFrame;
+      if (relativeFrame >= framesPerRender) { break; }
+      beatSegments[i] = [beatIndexHead + i, 0, relativeFrame];
+    }
+
+    uniforms.uniform3iv.push(
+      { name: '_beatSegments', value: beatSegments.flat() },
+    );
+
+    const framesPerBeat = ceilWithTolerance(
+      this.beatManager.beatSeconds * sampleRate,
+      BEAT_BOUNDARY_TOLERANCE,
+    );
+
+    uniforms.uniform1i.push(
+      { name: 'framesPerBeat', value: framesPerBeat },
     );
 
     // -- params -----------------------------------------------------------------------------------
@@ -624,6 +693,58 @@ export class WavenerdDeck {
     return uniforms;
   }
 
+  /**
+   * The first frame of the given beat, counted from the last rewind.
+   *
+   * e.g. `48000` means the beat begins at 1 second after the rewind, when the sample rate is 48000.
+   */
+  private __calcBeatStartFrame(beatIndex: number): number {
+    // The tolerance prevents boundaries that should be exactly on a frame from jittering.
+    return ceilWithTolerance(
+      this.beatManager.beatToTime(beatIndex) * this.sampleRate,
+      BEAT_BOUNDARY_TOLERANCE,
+    );
+  }
+
+  /**
+   * The beat that the given frame belongs to. Inverse of {@link __calcBeatStartFrame}.
+   *
+   * The frame is counted from the last rewind.
+   */
+  private __calcBeatIndexAtFrame(frame: number): number {
+    // The estimate is off by one at most, because of floating point errors.
+    // Correct it to be consistent with __calcBeatStartFrame, which decides beat boundaries.
+    let beatIndex = Math.floor(this.beatManager.timeToBeat(frame / this.sampleRate));
+    if (this.__calcBeatStartFrame(beatIndex) > frame) {
+      beatIndex--;
+    } else if (this.__calcBeatStartFrame(beatIndex + 1) <= frame) {
+      beatIndex++;
+    }
+
+    return beatIndex;
+  }
+
+  /**
+   * The first beat that begins a bar at or after the given frame.
+   *
+   * The frame is counted from the last rewind.
+   */
+  private __calcFirstBarBeatIndexAtOrAfterFrame(frame: number): number {
+    const { beatsPerBar } = this;
+    const beatIndex = this.__calcBeatIndexAtFrame(frame);
+
+    // the first beat of the bar the frame belongs to
+    const barBeatIndex = Math.floor(beatIndex / beatsPerBar) * beatsPerBar;
+
+    // the bar begins exactly at the frame (lucky)
+    if (this.__calcBeatStartFrame(barBeatIndex) === frame) {
+      return barBeatIndex;
+    }
+
+    // the bar began before the frame (most common case), so we choose the next bar
+    return barBeatIndex + beatsPerBar;
+  }
+
   private async __readBuffer(bufferWriteBlocks: number): Promise<void> {
     const bufferReaderNode = this.__bufferReaderNode;
     if (bufferReaderNode == null) { return; }
@@ -652,10 +773,7 @@ export class WavenerdDeck {
     const str: string | undefined = error?.message ?? error;
     if (!str) { return null; }
 
-    return str.replace(/ERROR: (\d+):(\d+)/g, (match, ...args) => {
-      const line = parseInt(args[1]) - shaderchunkPreLines + 1;
-      return `ERROR: ${args[0]}:${line}`;
-    });
+    return str;
   }
 }
 
@@ -673,6 +791,7 @@ export interface WavenerdDeck extends EventEmittable<{
   loadSample: { name: string; sampleRate: number; duration: number };
   deleteSample: { name: string };
   changeBPM: { bpm: number };
+  changeBeatsPerBar: { beatsPerBar: number };
   error: { error: string | null };
   underrun: void;
   underrunResolved: void;
