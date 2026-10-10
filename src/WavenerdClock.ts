@@ -1,5 +1,8 @@
-import { EventEmittable } from './utils/EventEmittable';
-import { applyMixins } from './utils/applyMixins';
+import { Observable } from './utils/Observable';
+
+interface WavenerdClockChangeBPMEvent {
+  bpm: number;
+}
 
 /**
  * A clock that manages the tempo and transport of WavenerdDeck.
@@ -33,7 +36,7 @@ export class WavenerdClock {
     this.__anchorTime = time;
 
     this.__bpm = Math.max(0.0, value);
-    this.__emit('changeBPM', { bpm: this.__bpm });
+    this.onChangeBPM.notify({ bpm: this.__bpm });
   }
 
   /**
@@ -105,6 +108,26 @@ export class WavenerdClock {
     return (this.__currentAudioFrame - this.__clockFrameOffset) / this.audio.sampleRate;
   }
 
+  /**
+   * Notified when the clock is played via {@link play}.
+   */
+  public readonly onPlay = new Observable();
+
+  /**
+   * Notified when the clock is paused via {@link pause}.
+   */
+  public readonly onPause = new Observable();
+
+  /**
+   * Notified when the clock is rewound via {@link rewind}.
+   */
+  public readonly onRewind = new Observable();
+
+  /**
+   * Notified when the BPM is changed.
+   */
+  public readonly onChangeBPM = new Observable<WavenerdClockChangeBPMEvent>();
+
   public constructor({ audio, bpm }: { audio: AudioContext; bpm?: number }) {
     this.audio = audio;
     this.__bpm = Math.max(0.0, bpm ?? 140.0);
@@ -119,7 +142,7 @@ export class WavenerdClock {
     this.__isPlaying = true;
     this.__clockFrameOffset = null;
 
-    this.__emit('play');
+    this.onPlay.notify();
   }
 
   /**
@@ -134,7 +157,7 @@ export class WavenerdClock {
 
     this.__isPlaying = false;
 
-    this.__emit('pause');
+    this.onPause.notify();
   }
 
   /**
@@ -147,7 +170,7 @@ export class WavenerdClock {
     this.__anchorTime = 0.0;
     this.__anchorBeat = 0.0;
 
-    this.__emit('rewind');
+    this.onRewind.notify();
   }
 
   /**
@@ -175,11 +198,3 @@ export class WavenerdClock {
     return Math.floor(this.audio.currentTime * this.audio.sampleRate);
   }
 }
-
-export interface WavenerdClock extends EventEmittable<{
-  play: void;
-  pause: void;
-  rewind: void;
-  changeBPM: { bpm: number };
-}> {}
-applyMixins(WavenerdClock, [EventEmittable]);

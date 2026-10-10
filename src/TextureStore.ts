@@ -1,21 +1,38 @@
 import { TextureStoreEntry, TextureStoreImageEntry, TextureStoreSampleEntry, TextureStoreWavetableEntry } from './TextureStoreEntry';
-import { EventEmittable } from './utils/EventEmittable';
+import { Observable } from './utils/Observable';
 
-export interface TextureStoreEvent {
-  load: { id: string; entry: TextureStoreEntry };
-  delete: { id: string };
-  dispose: void;
+interface TextureStoreLoadEvent {
+  id: string;
+  entry: TextureStoreEntry;
 }
 
-export class TextureStore extends EventEmittable<TextureStoreEvent> {
+interface TextureStoreDeleteEvent {
+  id: string;
+}
+
+export class TextureStore {
   private __textures: Map<string, TextureStoreEntry>;
 
   public get textureIds(): IterableIterator<string> {
     return this.__textures.keys();
   }
 
+  /**
+   * Notified when a texture is loaded.
+   */
+  public readonly onLoad = new Observable<TextureStoreLoadEvent>();
+
+  /**
+   * Notified when a texture is deleted.
+   */
+  public readonly onDelete = new Observable<TextureStoreDeleteEvent>();
+
+  /**
+   * Notified when {@link dispose} is called.
+   */
+  public readonly onDispose = new Observable();
+
   public constructor() {
-    super();
     this.__textures = new Map();
   }
 
@@ -24,7 +41,7 @@ export class TextureStore extends EventEmittable<TextureStoreEvent> {
    */
   public dispose(): void {
     this.__textures.clear();
-    this.__emit('dispose');
+    this.onDispose.notify();
   }
 
   /**
@@ -58,7 +75,7 @@ export class TextureStore extends EventEmittable<TextureStoreEvent> {
     this.__textures.set(id, entry);
 
     // Emit event for texture added
-    this.__emit('load', { id, entry });
+    this.onLoad.notify({ id, entry });
 
     return entry;
   }
@@ -91,7 +108,7 @@ export class TextureStore extends EventEmittable<TextureStoreEvent> {
     this.__textures.set(id, entry);
 
     // Emit event for texture added
-    this.__emit('load', { id, entry });
+    this.onLoad.notify({ id, entry });
 
     return entry;
   }
@@ -121,7 +138,7 @@ export class TextureStore extends EventEmittable<TextureStoreEvent> {
     this.__textures.set(id, entry);
 
     // Emit event for texture added
-    this.__emit('load', { id, entry });
+    this.onLoad.notify({ id, entry });
 
     return entry;
   }
@@ -138,7 +155,7 @@ export class TextureStore extends EventEmittable<TextureStoreEvent> {
     this.__textures.delete(id);
 
     // Emit event for texture removed
-    this.__emit('delete', { id });
+    this.onDelete.notify({ id });
 
     return true;
   }

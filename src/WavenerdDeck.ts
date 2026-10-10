@@ -2,9 +2,8 @@ import { Renderer } from './renderer/Renderer';
 import { WavenerdClock } from './WavenerdClock';
 import { wavenerdClockV1Compat } from './wavenerdClockV1Compat';
 import { BufferReaderNode } from './BufferReaderNode';
-import { EventEmittable } from './utils/EventEmittable';
+import { Observable } from './utils/Observable';
 import { TextureStore } from './TextureStore';
-import { applyMixins } from './utils/applyMixins';
 import { WavenerdDeckParam } from './WavenerdDeckParam';
 import { BLOCK_SIZE } from './constants';
 import { RenderUniforms } from './renderer/RenderUniforms';
@@ -22,6 +21,38 @@ interface WavenerdDeckProgram {
   requiredTextures: Set<string>;
 }
 
+type WavenerdDeckCueStatus = 'none' | 'compiling' | 'ready' | 'applying';
+
+interface WavenerdDeckChangeCueStatusEvent {
+  cueStatus: WavenerdDeckCueStatus;
+}
+
+interface WavenerdDeckSetParamEvent {
+  name: string;
+  value: number;
+}
+
+interface WavenerdDeckTextureEvent {
+  name: string;
+}
+
+interface WavenerdDeckLoadSampleEvent {
+  name: string;
+  sampleRate: number;
+  duration: number;
+}
+
+interface WavenerdDeckChangeBeatsPerBarEvent {
+  beatsPerBar: number;
+}
+
+interface WavenerdDeckCompileEvent {
+  /**
+   * The compile error. `undefined` if the compile succeeds.
+   */
+  error?: string;
+}
+
 export class WavenerdDeck {
   /**
    * The count of latency blocks.
@@ -36,7 +67,7 @@ export class WavenerdDeck {
    * `'ready'`: There is a cue shader and is ready to be applied.
    * `'applying'`: There is a cue shader and is going to be applied in the next bar.
    */
-  private __cueStatus: 'none' | 'compiling' | 'ready' | 'applying' = 'none';
+  private __cueStatus: WavenerdDeckCueStatus = 'none';
 
   /**
    * Its current cue status.
@@ -44,7 +75,7 @@ export class WavenerdDeck {
    * `'ready'`: There is a cue shader and is ready to be applied.
    * `'applying'`: There is a cue shader and is going to be applied in the next bar.
    */
-  public get cueStatus(): 'none' | 'compiling' | 'ready' | 'applying' {
+  public get cueStatus(): WavenerdDeckCueStatus {
     return this.__cueStatus;
   }
 
@@ -54,13 +85,11 @@ export class WavenerdDeck {
   public readonly clock: WavenerdClock;
 
   /**
-   * When its clock rewinds, apply the cue immediately.
+   * Unsubscribe the clock rewind, which applies the cue immediately.
    *
    * This is being a member since it needs to be unsubscribed on {@link dispose}.
    */
-  private __applyCueOnClockRewind = (): void => {
-    this.applyCueImmediately();
-  };
+  private __unsubscribeClockRewind: () => void;
 
   private __beatsPerBar = 4;
 
@@ -79,7 +108,7 @@ export class WavenerdDeck {
     }
 
     this.__beatsPerBar = value;
-    this.__emit('changeBeatsPerBar', { beatsPerBar: value });
+    this.onChangeBeatsPerBar.notify({ beatsPerBar: value });
   }
 
   /**
@@ -180,6 +209,67 @@ export class WavenerdDeck {
   }
 
   /**
+   * Notified when its {@link cueStatus} is changed.
+   */
+  public readonly onChangeCueStatus = new Observable<WavenerdDeckChangeCueStatusEvent>();
+
+  /**
+   * Notified when a param is set via {@link setParam}.
+   */
+  public readonly onSetParam = new Observable<WavenerdDeckSetParamEvent>();
+
+  /**
+   * Notified when a wavetable is loaded via {@link loadWavetable}.
+   */
+  public readonly onLoadWavetable = new Observable<WavenerdDeckTextureEvent>();
+
+  /**
+   * Notified when a wavetable is deleted via {@link deleteWavetable}.
+   */
+  public readonly onDeleteWavetable = new Observable<WavenerdDeckTextureEvent>();
+
+  /**
+   * Notified when an image is loaded via {@link loadImage}.
+   */
+  public readonly onLoadImage = new Observable<WavenerdDeckTextureEvent>();
+
+  /**
+   * Notified when an image is deleted via {@link deleteImage}.
+   */
+  public readonly onDeleteImage = new Observable<WavenerdDeckTextureEvent>();
+
+  /**
+   * Notified when a sample is loaded via {@link loadSample}.
+   */
+  public readonly onLoadSample = new Observable<WavenerdDeckLoadSampleEvent>();
+
+  /**
+   * Notified when a sample is deleted via {@link deleteSample}.
+   */
+  public readonly onDeleteSample = new Observable<WavenerdDeckTextureEvent>();
+
+  /**
+   * Notified when its {@link beatsPerBar} is changed.
+   */
+  public readonly onChangeBeatsPerBar = new Observable<WavenerdDeckChangeBeatsPerBarEvent>();
+
+  /**
+   * Notified when {@link compile} is done, whether it succeeds or not.
+   * Check `error != null` to see if it fails.
+   */
+  public readonly onCompile = new Observable<WavenerdDeckCompileEvent>();
+
+  /**
+   * Notified when its buffer runs out of written blocks.
+   */
+  public readonly onUnderrun = new Observable();
+
+  /**
+   * Notified when its buffer recovers from an underrun.
+   */
+  public readonly onUnderrunResolved = new Observable();
+
+  /**
    * Constructor of the WavenerdDeck.
    */
   public constructor({
@@ -210,7 +300,7 @@ export class WavenerdDeck {
     }
 
     this.clock = clock;
-    this.clock.on('rewind', this.__applyCueOnClockRewind);
+    this.__unsubscribeClockRewind = this.clock.onRewind.subscribe(() => this.applyCueImmediately());
 
     this.beatsPerBar = beatsPerBar ?? 4;
 
@@ -220,15 +310,15 @@ export class WavenerdDeck {
     this.__textureStore = new TextureStore();
 
     // Listen for texture events from the TextureStore
-    this.__textureStore.on('load', ({ id, entry }) => {
+    this.__textureStore.onLoad.subscribe(({ id, entry }) => {
       this.__renderer.uploadTexture(id, entry);
     });
 
-    this.__textureStore.on('delete', ({ id }) => {
+    this.__textureStore.onDelete.subscribe(({ id }) => {
       this.__renderer.deleteTexture(id);
     });
 
-    this.__textureStore.on('dispose', () => {
+    this.__textureStore.onDispose.subscribe(() => {
       this.__renderer.clearTextures();
     });
 
@@ -243,8 +333,8 @@ export class WavenerdDeck {
       this.__bufferReaderNode = new BufferReaderNode(audio);
       this.__bufferReaderNode.connect(this.__node);
 
-      this.__bufferReaderNode.on('underrun', () => this.__emit('underrun'));
-      this.__bufferReaderNode.on('underrunResolved', () => this.__emit('underrunResolved'));
+      this.__bufferReaderNode.onUnderrun.subscribe(() => this.onUnderrun.notify());
+      this.__bufferReaderNode.onUnderrunResolved.subscribe(() => this.onUnderrunResolved.notify());
     });
 
     this.__bufferWriteBlocks = 0;
@@ -262,7 +352,7 @@ export class WavenerdDeck {
     this.__bufferReaderNode?.disconnect();
 
     // the clock might be shared with other decks, so only stop listening to it instead of disposing it
-    this.clock.off('rewind', this.__applyCueOnClockRewind);
+    this.__unsubscribeClockRewind();
   }
 
   /**
@@ -278,10 +368,10 @@ export class WavenerdDeck {
 
       this.__setCueStatus('none');
 
-      this.__emit('error', { error });
       this.__lastError = error;
+      this.onCompile.notify({ error });
 
-      throw new Error(error ?? undefined);
+      throw new Error(error);
     });
 
     const requiredTextures = new Set<string>();
@@ -299,8 +389,8 @@ export class WavenerdDeck {
 
     this.__setCueStatus('ready');
 
-    this.__emit('error', { error: null });
     this.__lastError = null;
+    this.onCompile.notify({});
   }
 
   /**
@@ -337,7 +427,7 @@ export class WavenerdDeck {
       this.__params.set(name, new WavenerdDeckParam(value));
     }
 
-    this.__emit('setParam', { name, value });
+    this.onSetParam.notify({ name, value });
   }
 
   /**
@@ -353,7 +443,7 @@ export class WavenerdDeck {
 
     this.__addRequiredTexture(id);
 
-    this.__emit('loadWavetable', { name });
+    this.onLoadWavetable.notify({ name });
   }
 
   /**
@@ -363,7 +453,7 @@ export class WavenerdDeck {
     const isSuccess = this.__textureStore.delete(`wavetable_${name}`);
 
     if (isSuccess) {
-      this.__emit('deleteWavetable', { name });
+      this.onDeleteWavetable.notify({ name });
     }
   }
 
@@ -379,7 +469,7 @@ export class WavenerdDeck {
 
     this.__addRequiredTexture(id);
 
-    this.__emit('loadImage', { name });
+    this.onLoadImage.notify({ name });
   }
 
   /**
@@ -389,7 +479,7 @@ export class WavenerdDeck {
     const isSuccess = this.__textureStore.delete(`image_${name}`);
 
     if (isSuccess) {
-      this.__emit('deleteImage', { name });
+      this.onDeleteImage.notify({ name });
     }
   }
 
@@ -405,7 +495,7 @@ export class WavenerdDeck {
     this.__addRequiredTexture(id);
 
     const { duration, sampleRate } = audioBuffer; // is it really needed?
-    this.__emit('loadSample', { name, duration, sampleRate });
+    this.onLoadSample.notify({ name, duration, sampleRate });
   }
 
   /**
@@ -415,7 +505,7 @@ export class WavenerdDeck {
     const isSuccess = this.__textureStore.delete(`success_${name}`);
 
     if (isSuccess) {
-      this.__emit('deleteSample', { name });
+      this.onDeleteSample.notify({ name });
     }
   }
 
@@ -484,9 +574,6 @@ export class WavenerdDeck {
     // -- read buffer + update write blocks --------------------------------------------------------
     await this.__readBuffer(this.__bufferWriteBlocks);
     this.__bufferWriteBlocks += blocksPerRender;
-
-    // -- emit an event ----------------------------------------------------------------------------
-    this.__emit('update');
   }
 
   private __addRequiredTexture(id: string): void {
@@ -682,32 +769,15 @@ export class WavenerdDeck {
     );
   }
 
-  private __setCueStatus(cueStatus: 'none' | 'compiling' | 'ready' | 'applying'): void {
+  private __setCueStatus(cueStatus: WavenerdDeckCueStatus): void {
     this.__cueStatus = cueStatus;
-    this.__emit('changeCueStatus', { cueStatus });
+    this.onChangeCueStatus.notify({ cueStatus });
   }
 
-  private __processErrorMessage(error: any): string | null {
+  private __processErrorMessage(error: any): string {
     const str: string | undefined = error?.message ?? error;
-    if (!str) { return null; }
+    if (!str) { return 'wtf'; }
 
     return str;
   }
 }
-
-export interface WavenerdDeck extends EventEmittable<{
-  update: void;
-  changeCueStatus: { cueStatus: 'none' | 'compiling' | 'ready' | 'applying' };
-  setParam: { name: string; value: number };
-  loadWavetable: { name: string };
-  deleteWavetable: { name: string };
-  loadImage: { name: string };
-  deleteImage: { name: string };
-  loadSample: { name: string; sampleRate: number; duration: number };
-  deleteSample: { name: string };
-  changeBeatsPerBar: { beatsPerBar: number };
-  error: { error: string | null };
-  underrun: void;
-  underrunResolved: void;
-}> {}
-applyMixins(WavenerdDeck, [EventEmittable]);
