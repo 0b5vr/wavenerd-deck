@@ -502,7 +502,7 @@ export class WavenerdDeck {
    * Delete a sample.
    */
   public deleteSample(name: string): void {
-    const isSuccess = this.__textureStore.delete(`success_${name}`);
+    const isSuccess = this.__textureStore.delete(`sample_${name}`);
 
     if (isSuccess) {
       this.onDeleteSample.notify({ name });
