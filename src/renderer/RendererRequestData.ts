@@ -1,11 +1,11 @@
-import { TextureStoreEntry } from '../TextureStoreEntry';
+import { WavenerdTextureStoreEntry } from '../WavenerdTextureStoreEntry';
 import { RenderUniforms } from './RenderUniforms';
 
 export type RendererRequestData = (
   | { type: 'dispose' }
   | { type: 'compile'; code: string }
   | { type: 'applyCue' }
-  | { type: 'uploadTexture'; textureId: string; entry: TextureStoreEntry }
+  | { type: 'uploadTexture'; textureId: string; entry: WavenerdTextureStoreEntry }
   | { type: 'deleteTexture'; textureId: string }
   | { type: 'clearTextures' }
   | { type: 'updateBlocksPerRender'; blocksPerRender: number }

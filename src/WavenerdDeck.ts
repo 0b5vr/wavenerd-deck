@@ -3,7 +3,7 @@ import { WavenerdClock } from './WavenerdClock';
 import { wavenerdClockV1Compat } from './wavenerdClockV1Compat';
 import { BufferReaderNode } from './BufferReaderNode';
 import { Observable } from './utils/Observable';
-import { TextureStore } from './TextureStore';
+import { WavenerdTextureStore } from './WavenerdTextureStore';
 import { WavenerdDeckParam } from './WavenerdDeckParam';
 import { BLOCK_SIZE } from './constants';
 import { RenderUniforms } from './renderer/RenderUniforms';
@@ -30,16 +30,6 @@ interface WavenerdDeckChangeCueStatusEvent {
 interface WavenerdDeckSetParamEvent {
   name: string;
   value: number;
-}
-
-interface WavenerdDeckTextureEvent {
-  name: string;
-}
-
-interface WavenerdDeckLoadSampleEvent {
-  name: string;
-  sampleRate: number;
-  duration: number;
 }
 
 interface WavenerdDeckChangeBeatsPerBarEvent {
@@ -90,6 +80,18 @@ export class WavenerdDeck {
    * This is being a member since it needs to be unsubscribed on {@link dispose}.
    */
   private __unsubscribeClockRewind: () => void;
+
+  /**
+   * Its {@link WavenerdTextureStore}.
+   */
+  public readonly textures: WavenerdTextureStore;
+
+  /**
+   * Unsubscribe the texture store events.
+   *
+   * This is being a member since it needs to be unsubscribed on {@link dispose}.
+   */
+  private __unsubscribeTextures: () => void;
 
   private __beatsPerBar = 4;
 
@@ -175,8 +177,6 @@ export class WavenerdDeck {
 
   private __params = new Map<string, WavenerdDeckParam>();
 
-  private __textureStore: TextureStore;
-
   /**
    * The number of blocks that will be processed per render call.
    */
@@ -219,36 +219,6 @@ export class WavenerdDeck {
   public readonly onSetParam = new Observable<WavenerdDeckSetParamEvent>();
 
   /**
-   * Notified when a wavetable is loaded via {@link loadWavetable}.
-   */
-  public readonly onLoadWavetable = new Observable<WavenerdDeckTextureEvent>();
-
-  /**
-   * Notified when a wavetable is deleted via {@link deleteWavetable}.
-   */
-  public readonly onDeleteWavetable = new Observable<WavenerdDeckTextureEvent>();
-
-  /**
-   * Notified when an image is loaded via {@link loadImage}.
-   */
-  public readonly onLoadImage = new Observable<WavenerdDeckTextureEvent>();
-
-  /**
-   * Notified when an image is deleted via {@link deleteImage}.
-   */
-  public readonly onDeleteImage = new Observable<WavenerdDeckTextureEvent>();
-
-  /**
-   * Notified when a sample is loaded via {@link loadSample}.
-   */
-  public readonly onLoadSample = new Observable<WavenerdDeckLoadSampleEvent>();
-
-  /**
-   * Notified when a sample is deleted via {@link deleteSample}.
-   */
-  public readonly onDeleteSample = new Observable<WavenerdDeckTextureEvent>();
-
-  /**
    * Notified when its {@link beatsPerBar} is changed.
    */
   public readonly onChangeBeatsPerBar = new Observable<WavenerdDeckChangeBeatsPerBarEvent>();
@@ -275,6 +245,7 @@ export class WavenerdDeck {
   public constructor({
     audio,
     clock,
+    textures,
     latencyBlocks,
     blocksPerRender,
     beatsPerBar,
@@ -285,6 +256,11 @@ export class WavenerdDeck {
      * The clock the deck uses to do time stuff. Decks sharing a clock play in sync.
      */
     clock: WavenerdClock;
+
+    /**
+     * The texture store the deck reads textures from.
+     */
+    textures: WavenerdTextureStore;
 
     latencyBlocks?: number;
     blocksPerRender?: number;
@@ -307,23 +283,35 @@ export class WavenerdDeck {
     // -- renderer ---------------------------------------------------------------------------------
     this.__renderer = new Renderer({ blocksPerRender });
 
-    this.__textureStore = new TextureStore();
+    this.__program = null;
+    this.__programCue = null;
 
-    // Listen for texture events from the TextureStore
-    this.__textureStore.onLoad.subscribe(({ id, entry }) => {
+    // -- textures ---------------------------------------------------------------------------------
+    this.textures = textures;
+
+    // the texture store might already have textures loaded before the deck is created
+    for (const id of textures.textureIds) {
+      this.__renderer.uploadTexture(id, textures.getTextureById(id)!);
+    }
+
+    const unsubscribeLoad = textures.onLoad.subscribe(({ id, entry }) => {
       this.__renderer.uploadTexture(id, entry);
+      this.__addRequiredTexture(id);
     });
 
-    this.__textureStore.onDelete.subscribe(({ id }) => {
+    const unsubscribeDelete = textures.onDelete.subscribe(({ id }) => {
       this.__renderer.deleteTexture(id);
     });
 
-    this.__textureStore.onDispose.subscribe(() => {
+    const unsubscribeDispose = textures.onDispose.subscribe(() => {
       this.__renderer.clearTextures();
     });
 
-    this.__program = null;
-    this.__programCue = null;
+    this.__unsubscribeTextures = () => {
+      unsubscribeLoad();
+      unsubscribeDelete();
+      unsubscribeDispose();
+    };
 
     // -- audio ------------------------------------------------------------------------------------
     this.audio = audio;
@@ -347,12 +335,13 @@ export class WavenerdDeck {
     this.__setCueStatus('none');
 
     this.__renderer.dispose();
-    this.__textureStore.dispose();
 
     this.__bufferReaderNode?.disconnect();
 
-    // the clock might be shared with other decks, so only stop listening to it instead of disposing it
+    // the clock and the texture store might be shared with other decks,
+    // so only stop listening to them instead of disposing them
     this.__unsubscribeClockRewind();
+    this.__unsubscribeTextures();
   }
 
   /**
@@ -376,7 +365,7 @@ export class WavenerdDeck {
 
     const requiredTextures = new Set<string>();
 
-    for (const id of this.__textureStore.textureIds) {
+    for (const id of this.textures.textureIds) {
       if (code.includes(id)) {
         requiredTextures.add(id);
       }
@@ -428,85 +417,6 @@ export class WavenerdDeck {
     }
 
     this.onSetParam.notify({ name, value });
-  }
-
-  /**
-   * Load a x-y wavetable and store as a uniform texture.
-   * The buffer have to be encoded in F32, 2048 samples per cycle.
-   */
-  public loadWavetable(
-    name: string,
-    inputBuffer: Float32Array,
-  ): void {
-    const id = `wavetable_${name}`;
-    this.__textureStore.loadWavetable(id, inputBuffer);
-
-    this.__addRequiredTexture(id);
-
-    this.onLoadWavetable.notify({ name });
-  }
-
-  /**
-   * Delete a wavetable.
-   */
-  public deleteWavetable(name: string): void {
-    const isSuccess = this.__textureStore.delete(`wavetable_${name}`);
-
-    if (isSuccess) {
-      this.onDeleteWavetable.notify({ name });
-    }
-  }
-
-  /**
-   * Load an image and store as a uniform texture.
-   */
-  public loadImage(
-    name: string,
-    image: HTMLImageElement,
-  ): void {
-    const id = `image_${name}`;
-    this.__textureStore.loadImage(id, image);
-
-    this.__addRequiredTexture(id);
-
-    this.onLoadImage.notify({ name });
-  }
-
-  /**
-   * Delete an image.
-   */
-  public deleteImage(name: string): void {
-    const isSuccess = this.__textureStore.delete(`image_${name}`);
-
-    if (isSuccess) {
-      this.onDeleteImage.notify({ name });
-    }
-  }
-
-  /**
-   * Load a sample and store as a uniform texture.
-   */
-  public async loadSample(name: string, inputBuffer: ArrayBuffer): Promise<void> {
-    const audioBuffer = await this.audio.decodeAudioData(inputBuffer);
-
-    const id = `sample_${name}`;
-    this.__textureStore.loadSample(id, audioBuffer);
-
-    this.__addRequiredTexture(id);
-
-    const { duration, sampleRate } = audioBuffer; // is it really needed?
-    this.onLoadSample.notify({ name, duration, sampleRate });
-  }
-
-  /**
-   * Delete a sample.
-   */
-  public deleteSample(name: string): void {
-    const isSuccess = this.__textureStore.delete(`sample_${name}`);
-
-    if (isSuccess) {
-      this.onDeleteSample.notify({ name });
-    }
   }
 
   public async update(): Promise<void> {
@@ -676,7 +586,7 @@ export class WavenerdDeck {
     const { requiredTextures } = this.__program!;
 
     for (const textureName of requiredTextures) {
-      const textureEntry = this.__textureStore.get(textureName);
+      const textureEntry = this.textures.getTextureById(textureName);
 
       if (textureEntry != null) {
         uniforms.uniformTexture.push({

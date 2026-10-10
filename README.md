@@ -18,15 +18,19 @@ npm install @0b5vr/wavenerd-deck
 ## Usage
 
 ```js
-import { WavenerdClock, WavenerdDeck } from '@0b5vr/wavenerd-deck';
+import { WavenerdClock, WavenerdDeck, WavenerdTextureStore } from '@0b5vr/wavenerd-deck';
 
 const audio = new AudioContext();
 
 // Create a clock, which holds the tempo and the transport
 const clock = new WavenerdClock({ audio, bpm: 140 });
 
+// Create a texture store, which holds the samples, wavetables and images
+const textures = new WavenerdTextureStore({ audio });
+await textures.loadSample('amen', arrayBuffer); // available as `sample_amen` in shaders
+
 // Create a deck, connect it to the audio destination
-const deck = new WavenerdDeck({ audio, clock });
+const deck = new WavenerdDeck({ audio, clock, textures });
 deck.node.connect(audio.destination);
 
 // Compile a GLSL fragment shader and apply it

@@ -49,7 +49,7 @@
 </style>
 
 <script type="module">
-  import { WavenerdClock, WavenerdDeck } from '../dist/wavenerd-deck.esm.js';
+  import { WavenerdClock, WavenerdDeck, WavenerdTextureStore } from '../dist/wavenerd-deck.esm.js';
   import { fetchImage } from './fetchImage.js';
 
   ( async () => {
@@ -57,9 +57,12 @@
 
     const clock = new WavenerdClock( { audio, bpm: 190 } );
 
+    const textures = new WavenerdTextureStore( { audio } );
+
     const wavenerdDeck = new WavenerdDeck( {
       audio,
       clock,
+      textures,
       latencyBlocks: 32,
       blocksPerRender: 16,
     } );
@@ -67,22 +70,22 @@
 
     await fetch( './wavetables/m-talk.bin' )
       .then( ( res ) => res.arrayBuffer() )
-      .then( ( buffer ) => wavenerdDeck.loadWavetable( 'mtalk', new Float32Array( buffer ) ) )
+      .then( ( buffer ) => textures.loadWavetable( 'mtalk', new Float32Array( buffer ) ) )
 
     await fetchImage( './images/fbm.png' )
-      .then( ( image ) => wavenerdDeck.loadImage( 'fbm', image ) );
+      .then( ( image ) => textures.loadImage( 'fbm', image ) );
 
     await fetch( './samples/amen.ogg' )
       .then( ( res ) => res.arrayBuffer() )
-      .then( ( buffer ) => wavenerdDeck.loadSample( 'amen', buffer ) );
+      .then( ( buffer ) => textures.loadSample( 'amen', buffer ) );
 
     await fetch( './samples/crash.ogg' )
       .then( ( res ) => res.arrayBuffer() )
-      .then( ( buffer ) => wavenerdDeck.loadSample( 'crash', buffer ) );
+      .then( ( buffer ) => textures.loadSample( 'crash', buffer ) );
 
     await fetch( './samples/909oh.ogg' )
       .then( ( res ) => res.arrayBuffer() )
-      .then( ( buffer ) => wavenerdDeck.loadSample( '909oh', buffer ) );
+      .then( ( buffer ) => textures.loadSample( '909oh', buffer ) );
 
     const frag = await fetch( selectExample.value )
       .then( ( res ) => res.text() );

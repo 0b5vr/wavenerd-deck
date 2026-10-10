@@ -1,4 +1,4 @@
-import { TextureStoreEntry, TextureStoreImageEntry, TextureStoreSampleEntry, TextureStoreWavetableEntry } from '../TextureStoreEntry';
+import { WavenerdTextureStoreEntry, WavenerdTextureStoreImageEntry, WavenerdTextureStoreSampleEntry, WavenerdTextureStoreWavetableEntry } from '../WavenerdTextureStoreEntry';
 
 /**
  * Class for uploading textures to WebGL in the worker thread
@@ -14,23 +14,23 @@ export class TextureUploader {
   /**
    * Upload a texture based on its type.
    */
-  public uploadTexture(id: string, entry: TextureStoreEntry): WebGLTexture {
+  public uploadTexture(id: string, entry: WavenerdTextureStoreEntry): WebGLTexture {
     const { type } = entry;
     if (type === 'image') {
-      return this.uploadImageTexture(id, entry as TextureStoreImageEntry);
+      return this.uploadImageTexture(id, entry as WavenerdTextureStoreImageEntry);
     } else if (type === 'wavetable') {
-      return this.uploadWavetableTexture(id, entry as TextureStoreWavetableEntry);
+      return this.uploadWavetableTexture(id, entry as WavenerdTextureStoreWavetableEntry);
     } else if (type === 'sample') {
-      return this.uploadSampleTexture(id, entry as TextureStoreSampleEntry);
+      return this.uploadSampleTexture(id, entry as WavenerdTextureStoreSampleEntry);
     } else {
-      throw new Error(`Unreachable. Unknown TextureStoreEntry type: ${type}`);
+      throw new Error(`Unreachable. Unknown WavenerdTextureStoreEntry type: ${type}`);
     }
   }
 
   /**
    * Upload an image texture from serialized data.
    */
-  public uploadImageTexture(id: string, entry: TextureStoreImageEntry): WebGLTexture {
+  public uploadImageTexture(id: string, entry: WavenerdTextureStoreImageEntry): WebGLTexture {
     // Check if texture already exists
     if (this.textures.has(id)) {
       return this.textures.get(id)!;
@@ -71,7 +71,7 @@ export class TextureUploader {
   /**
    * Upload a wavetable texture from serialized data.
    */
-  public uploadWavetableTexture(id: string, entry: TextureStoreWavetableEntry): WebGLTexture {
+  public uploadWavetableTexture(id: string, entry: WavenerdTextureStoreWavetableEntry): WebGLTexture {
     // Check if texture already exists
     if (this.textures.has(id)) {
       return this.textures.get(id)!;
@@ -112,7 +112,7 @@ export class TextureUploader {
   /**
    * Upload a sample texture from serialized data.
    */
-  public uploadSampleTexture(id: string, entry: TextureStoreSampleEntry): WebGLTexture {
+  public uploadSampleTexture(id: string, entry: WavenerdTextureStoreSampleEntry): WebGLTexture {
     // Check if texture already exists
     if (this.textures.has(id)) {
       return this.textures.get(id)!;

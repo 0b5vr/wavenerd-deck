@@ -4,7 +4,7 @@ import { wrapShader } from './wrapShader';
 import { glWaitGPUCommandsCompleteAsync } from '../utils/glWaitGPUCommandsCompleteAsync';
 import { lazyProgram } from './utils/lazyProgram';
 import { TextureUploader } from './TextureUploader';
-import { TextureStoreEntry } from '../TextureStoreEntry';
+import { WavenerdTextureStoreEntry } from '../WavenerdTextureStoreEntry';
 import { BLOCK_SIZE } from '../constants';
 import { RenderUniforms } from './RenderUniforms';
 
@@ -170,7 +170,7 @@ export class RendererImpl {
   /**
    * Upload a texture from a texture entry.
    */
-  public uploadTexture(id: string, entry: TextureStoreEntry): WebGLTexture {
+  public uploadTexture(id: string, entry: WavenerdTextureStoreEntry): WebGLTexture {
     return this.__textureUploader.uploadTexture(id, entry);
   }
 
