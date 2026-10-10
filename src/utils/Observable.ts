@@ -27,7 +27,7 @@ export class Observable<T = void> {
    *
    * @param event The event to pass to the observers. Omit it when `T` is `void`
    */
-  public notify(...[event]: T extends void ? [] : [T]): void {
+  public notify(...[event]: [T] extends [void] ? [] : [T]): void {
     for (const observer of this.__observers) {
       observer(event as T);
     }
