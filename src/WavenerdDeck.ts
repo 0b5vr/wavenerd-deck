@@ -377,7 +377,7 @@ export class WavenerdDeck {
     const requiredTextures = new Set<string>();
 
     for (const id of this.__textureStore.textureIds) {
-      if (code.search(id) !== -1) {
+      if (code.includes(id)) {
         requiredTextures.add(id);
       }
     }
@@ -577,11 +577,11 @@ export class WavenerdDeck {
   }
 
   private __addRequiredTexture(id: string): void {
-    if (this.__program && this.__program.code.search(id)) {
+    if (this.__program && this.__program.code.includes(id)) {
       this.__program.requiredTextures.add(id);
     }
 
-    if (this.__programCue && this.__programCue.code.search(id)) {
+    if (this.__programCue && this.__programCue.code.includes(id)) {
       this.__programCue.requiredTextures.add(id);
     }
   }
