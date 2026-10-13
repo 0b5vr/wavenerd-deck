@@ -11,7 +11,6 @@ class BufferReaderProcessor extends AudioWorkletProcessor {
 
     this.active = false;
     this.buffer = new Float32Array(CHANNELS * FRAMES_PER_CHANNEL);
-    this.blocks = 0;
     this.written = 0;
     this.underrun = false;
 
@@ -27,12 +26,14 @@ class BufferReaderProcessor extends AudioWorkletProcessor {
 
   process(inputs, outputs, parameters) {
     if (this.active) {
-      const underrun = this.written <= this.blocks;
+      const block = Math.floor(currentFrame / BLOCK_SIZE);
+
+      const underrun = this.written <= block;
       this.setUnderrun(underrun);
 
       if (!underrun) {
         const buffer = this.buffer;
-        const frame = (this.blocks * BLOCK_SIZE) % FRAMES_PER_CHANNEL;
+        const frame = (block * BLOCK_SIZE) % FRAMES_PER_CHANNEL;
 
         outputs[0].forEach((ch, iCh) => {
           const chHead = FRAMES_PER_CHANNEL * iCh;
@@ -40,8 +41,6 @@ class BufferReaderProcessor extends AudioWorkletProcessor {
         });
       }
     }
-
-    this.blocks += 1;
 
     return true;
   }
