@@ -131,7 +131,7 @@
     update();
 
     // == wavenerd deck event listeners ============================================================
-    wavenerdDeck.on( 'changeCueStatus', ( { cueStatus } ) => {
+    wavenerdDeck.onChangeCueStatus.subscribe( ( { cueStatus } ) => {
       buttonApplyCue.disabled = cueStatus !== 'ready';
       buttonApplyCueImmediately.disabled = cueStatus !== 'ready';
 
@@ -144,12 +144,12 @@
     } );
 
     // == clock event listeners ====================================================================
-    clock.on( 'play', () => {
+    clock.onPlay.subscribe( () => {
       buttonPlay.disabled = true;
       buttonPause.disabled = false;
     } );
 
-    clock.on( 'pause', () => {
+    clock.onPause.subscribe( () => {
       buttonPlay.disabled = false;
       buttonPause.disabled = true;
     } );
