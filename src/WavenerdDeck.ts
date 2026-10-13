@@ -439,12 +439,11 @@ export class WavenerdDeck {
       return;
     }
 
-    // we're very behind
-    if (this.__bufferReaderNode?.underrun) {
+    // we're very behind, or just resumed from a pause
+    if (blockAhead <= 0) {
       this.__bufferWriteBlocks = (
         Math.floor((readBlocks + this.latencyBlocks) / blocksPerRender)
       ) * blocksPerRender;
-      console.warn('Buffer underrun. Catching up...');
     }
 
     const audioFrame = BLOCK_SIZE * this.__bufferWriteBlocks;
