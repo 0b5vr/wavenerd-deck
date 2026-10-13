@@ -12,6 +12,7 @@
   <button id="buttonPlay">Play</button>
   <button id="buttonPause" disabled>Pause</button>
   <button id="buttonRewind">Rewind</button><br />
+  <span id="spanTransport">Transport: ----</span><br />
   <button id="buttonCompile">Compile</button>
   <button id="buttonApplyCue" disabled>Apply Cue</button>
   <button id="buttonApplyCueImmediately" disabled>Apply Cue Immediately</button><br />
@@ -25,6 +26,11 @@
 </body>
 
 <style>
+  #spanTransport {
+    font-family: monospace;
+    white-space: pre;
+  }
+
   #divBlocks {
     display: flex;
     gap: 1px;
@@ -129,6 +135,34 @@
       setTimeout(update);
     }
     update();
+
+    // == update transport =========================================================================
+    function formatTime( time ) {
+      const sign = time < 0.0 ? '-' : ' ';
+      const ms = Math.floor( Math.abs( time ) * 1000.0 );
+      const min = String( Math.floor( ms / 60000 ) ).padStart( 2, '0' );
+      const sec = String( Math.floor( ms / 1000 ) % 60 ).padStart( 2, '0' );
+      const msec = String( ms % 1000 ).padStart( 3, '0' );
+      return `${sign}${min}:${sec}.${msec}`;
+    }
+
+    function updateTransport() {
+      const { time, isPlaying } = clock;
+      const beatsPerBar = wavenerdDeck.beatsPerBar;
+
+      const beatIndex = Math.floor( clock.timeToBeat( time ) );
+      const bar = Math.floor( beatIndex / beatsPerBar );
+      const beatInBar = beatIndex - bar * beatsPerBar;
+
+      spanTransport.textContent = [
+        isPlaying ? 'Playing' : 'Paused ',
+        `Time: ${formatTime( time )}`,
+        `Bar: ${bar + 1}.${beatInBar + 1}`,
+      ].join( ' | ' );
+
+      requestAnimationFrame( updateTransport );
+    }
+    updateTransport();
 
     // == wavenerd deck event listeners ============================================================
     wavenerdDeck.onChangeCueStatus.subscribe( ( { cueStatus } ) => {
